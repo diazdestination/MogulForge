@@ -1,5 +1,7 @@
 .next/
+.next-stale-*/
 .vinext/
+.wrangler/
 node_modules/
 .env*
 !.env.example
