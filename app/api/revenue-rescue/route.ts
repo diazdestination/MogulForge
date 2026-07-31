@@ -4,9 +4,36 @@ import { rescueInputSchema } from "@/lib/rescue-schema";
 
 export const runtime = "nodejs";
 
+function directionalAssessment(input: ReturnType<typeof rescueInputSchema.parse>) {
+  const opportunity = input.averageJobValue * input.monthlyLeadVolume;
+  const low = Math.round(opportunity * 0.08 / 100) * 100;
+  const high = Math.round(opportunity * 0.22 / 100) * 100;
+  const hasDefinedFollowUp = !/none|manual|when we can|no process/i.test(input.followUpProcess);
+  const score = Math.max(35, Math.min(82, 52 + (hasDefinedFollowUp ? 12 : 0) + (input.monthlyLeadVolume > 20 ? 6 : 0)));
+  return {
+    score,
+    estimatedMonthlyLeakage: `$${low.toLocaleString()}–$${Math.max(high, low).toLocaleString()}`,
+    topLeaks: [
+      { title: "Lead response gap", impact: "Every delayed reply gives a ready buyer time to choose another provider.", fix: "Add immediate confirmation and a five-minute response workflow." },
+      { title: "Conversion path friction", impact: `At an average value of $${input.averageJobValue.toLocaleString()}, even a small conversion lift can be meaningful.`, fix: "Give each high-intent page one clear next step and proof near the call to action." },
+      { title: "Unrecovered opportunities", impact: "Unclosed estimates and older leads often receive no structured second chance.", fix: "Install estimate follow-up and a simple lead-reactivation sequence." },
+    ],
+    quickWins: ["Reply to every new lead immediately", "Simplify the primary website call to action", "Follow up on every open estimate"],
+    summary: `${input.businessName} has a credible opportunity to recover more value from its existing ${input.industry.toLowerCase()} demand in ${input.serviceArea}. This first-pass estimate is directional and should be confirmed with your real pipeline data.`,
+  };
+}
+
 export async function POST(request: Request) {
-  const parsed = rescueInputSchema.safeParse(await request.json());
-  if (!parsed.success) return NextResponse.json({ error: "Please check the form fields.", issues: parsed.error.flatten().fieldErrors }, { status: 400 });
+  const body = await request.json().catch(() => null);
+  const parsed = rescueInputSchema.safeParse(body);
+  if (!parsed.success) {
+    const issues = parsed.error.flatten().fieldErrors;
+    const firstIssue = Object.values(issues).flat().find(Boolean);
+    return NextResponse.json({ error: firstIssue ?? "Please check the form fields.", issues }, { status: 400 });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ result: directionalAssessment(parsed.data), mode: "directional" });
+  }
   try {
     const response = await getOpenAIClient().responses.create({
       model: process.env.OPENAI_MODEL ?? "gpt-5.6-luna",
@@ -18,7 +45,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ result, responseId: response.id });
   } catch (error) {
     console.error("Revenue Rescue analysis failed", error);
-    return NextResponse.json({ error: "The analysis could not be completed right now." }, { status: 503 });
+    return NextResponse.json({ result: directionalAssessment(parsed.data), mode: "directional" });
   }
 }
-
