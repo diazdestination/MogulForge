@@ -1,4 +1,5 @@
 .next/
+.vinext/
 node_modules/
 .env*
 !.env.example
