@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import type { RescueInput } from "@/lib/rescue-schema";
 
 type RescueResult = { score:number; estimatedMonthlyLeakage:string; topLeaks:{title:string;impact:string;fix:string}[]; quickWins:string[]; summary:string };
-const fields = [{name:"businessName",label:"Business name",type:"text"},{name:"website",label:"Website",type:"url"},{name:"industry",label:"Industry",type:"text"},{name:"serviceArea",label:"Service area",type:"text"},{name:"averageJobValue",label:"Average job value ($)",type:"number"},{name:"monthlyLeadVolume",label:"Monthly lead volume",type:"number"}] as const;
+const fields = [{name:"businessName",label:"Business name",type:"text"},{name:"website",label:"Website",type:"text"},{name:"industry",label:"Industry",type:"text"},{name:"serviceArea",label:"Service area",type:"text"},{name:"averageJobValue",label:"Average job value ($)",type:"number"},{name:"monthlyLeadVolume",label:"Monthly lead volume",type:"number"}] as const;
 
 export function RescueForm(){
   const { register, handleSubmit, formState:{errors,isSubmitting} } = useForm<RescueInput>();
