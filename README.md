@@ -17,6 +17,7 @@ For Replit, add `OPENAI_API_KEY` and optional `OPENAI_MODEL` through Replit Secr
 - `npm run typecheck`
 - `npm run lint`
 - `npm run build`
+- `npm run build:sites` for the hosted preview build
 
 ## Architecture
 
