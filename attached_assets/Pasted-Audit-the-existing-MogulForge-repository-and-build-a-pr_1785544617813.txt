@@ -1,0 +1,2510 @@
+Audit the existing MogulForge repository and build a production-ready product called:
+
+MogulForge Revenue Rescue™
+
+Revenue Rescue is an AI-powered lead recovery and reactivation platform for home-service contractors.
+
+It imports old leads, missed estimates, website inquiries, CRM contacts, unsold proposals, missed-call records, and dormant opportunities. It cleans and categorizes the data, scores each opportunity, generates personalized reactivation outreach, tracks replies, books appointments, and measures recovered pipeline and revenue.
+
+This must not be built as a standalone page that is copied separately into every client website.
+
+Build Revenue Rescue as a centralized, multi-tenant MogulForge SaaS platform that can power:
+
+1. The main MogulForge Revenue Rescue product.
+2. Native Revenue Rescue pages inside websites and CRMs built by MogulForge.
+3. Secure embedded Revenue Rescue dashboards inside client websites.
+4. Individual embeddable widgets.
+5. REST API integrations.
+6. Incoming and outgoing webhooks.
+7. External CRM integrations.
+8. White-labeled client portals.
+9. Monthly subscription plans with usage limits.
+10. A MogulForge administrator portal for provisioning new clients.
+
+The same hosted application and backend must serve every client organization while maintaining strict tenant isolation.
+
+Do not create separate application copies, databases, or AI logic for each customer.
+
+Reuse the existing MogulForge architecture, authentication, database, routing, design system, components, API conventions, and deployment configuration wherever practical.
+
+Do not break existing MogulForge functionality.
+
+⸻
+
+PRIMARY BUSINESS GOAL
+
+Revenue Rescue should communicate one clear promise:
+
+We find the revenue hiding inside the leads you already paid for.
+
+The product is designed for:
+
+* Roofing contractors
+* Pool builders
+* Remodelers
+* Landscapers
+* HVAC companies
+* Plumbers
+* Electricians
+* Water-restoration companies
+* Concrete contractors
+* Outdoor-living companies
+* Other high-ticket home-service businesses
+
+Focus the copy and interface on:
+
+* Opportunities recovered
+* Conversations restarted
+* Estimates booked
+* Pipeline created
+* Jobs sold
+* Response speed
+* Sales-team accountability
+* Revenue attribution
+
+Avoid excessive generic AI language.
+
+Contractors do not primarily care about AI technology. They care about booked estimates and sold jobs.
+
+⸻
+
+REQUIRED PRODUCT ARCHITECTURE
+
+Build Revenue Rescue using this architecture:
+
+Client Website or CRM
+        |
+        |-- Native Revenue Rescue route
+        |-- Secure embedded dashboard
+        |-- Embeddable widgets
+        |-- REST API integration
+        |-- Incoming and outgoing webhooks
+        |
+        v
+Central MogulForge Revenue Rescue Platform
+        |
+        |-- Authentication and tenant isolation
+        |-- Lead import and cleanup
+        |-- AI analysis and scoring
+        |-- Campaign generation
+        |-- SMS and email provider layer
+        |-- Reply classification
+        |-- Appointment booking
+        |-- CRM synchronization
+        |-- Reporting and attribution
+        |-- Usage metering and subscriptions
+
+The central platform must be the source of Revenue Rescue application logic.
+
+Client websites should connect to the central system instead of containing independent copies of the entire Revenue Rescue product.
+
+⸻
+
+IMPLEMENTATION PRINCIPLES
+
+Follow these principles:
+
+1. Inspect the repository before making architectural decisions.
+2. Reuse existing authentication and organization models if present.
+3. Reuse the existing database and ORM.
+4. Reuse the existing component library and MogulForge branding.
+5. Keep all provider credentials server-side.
+6. Use strong TypeScript typing.
+7. Use modular services and provider abstractions.
+8. Do not pretend an integration works when it is only a placeholder.
+9. Clearly distinguish demo, simulation, staging, and live modes.
+10. Make the strongest functional MVP possible without overengineering.
+11. Prioritize native website integration and secure embeds before building numerous CRM-specific connectors.
+12. Document all assumptions and unfinished integrations.
+
+⸻
+
+PUBLIC ROUTES
+
+Create or adapt these public routes:
+
+* /revenue-rescue
+* /revenue-rescue/start
+* /revenue-rescue/demo
+* /revenue-rescue/calculator
+* /revenue-rescue/install
+* /revenue-rescue/integrations
+
+Use the existing routing conventions if different.
+
+⸻
+
+AUTHENTICATED CLIENT ROUTES
+
+Create or adapt these authenticated routes:
+
+* /dashboard/revenue-rescue
+* /dashboard/revenue-rescue/leads
+* /dashboard/revenue-rescue/imports
+* /dashboard/revenue-rescue/campaigns
+* /dashboard/revenue-rescue/conversations
+* /dashboard/revenue-rescue/appointments
+* /dashboard/revenue-rescue/reports
+* /dashboard/revenue-rescue/integrations
+* /dashboard/revenue-rescue/team
+* /dashboard/revenue-rescue/settings
+* /dashboard/revenue-rescue/billing
+
+If the existing MogulForge site already has a dashboard shell, place these routes inside it.
+
+Do not create a competing dashboard navigation structure unless necessary.
+
+⸻
+
+MOGULFORGE ADMINISTRATOR ROUTES
+
+Create an authorized MogulForge administration area:
+
+* /admin/organizations
+* /admin/organizations/new
+* /admin/organizations/:id
+* /admin/provision-client
+* /admin/subscriptions
+* /admin/integrations
+* /admin/usage
+* /admin/support
+* /admin/audit-logs
+
+Only authorized MogulForge platform administrators may access these pages.
+
+⸻
+
+PART 1: PUBLIC REVENUE RESCUE LANDING PAGE
+
+Create a polished, high-converting page at /revenue-rescue.
+
+Use the existing MogulForge brand and visual system.
+
+The page should feel premium, modern, trustworthy, financially focused, and contractor-specific.
+
+Avoid:
+
+* Cartoon robots
+* Neon cyberpunk styling
+* Excessive gradients
+* Fake testimonials
+* Fake client logos
+* Unsupported claims
+* Generic stock SaaS copy
+
+Hero section
+
+Headline:
+
+Your Old Leads Aren’t Dead. They’re Unworked Revenue.
+
+Supporting copy:
+
+MogulForge Revenue Rescue analyzes your old estimates, missed calls, website inquiries, unsold proposals, and dormant CRM contacts. It identifies the people most likely to re-engage, creates personalized follow-up, and helps turn overlooked opportunities into appointments and sold jobs.
+
+Primary CTA:
+
+Start a Revenue Rescue Sprint
+
+Secondary CTA:
+
+Explore the Live Demo
+
+Include an interactive dashboard preview using clearly labeled demo data.
+
+Suggested demo metrics:
+
+* 1,248 dormant leads imported
+* 1,106 leads analyzed
+* 186 high-potential opportunities
+* 42 conversations restarted
+* 17 appointments booked
+* $284,000 potential recovered pipeline
+
+Clearly label all non-live values as example data.
+
+Problem section
+
+Headline:
+
+You Already Paid for These Leads
+
+Explain that opportunities are frequently lost because:
+
+* Leads were called only once.
+* Estimates were never followed up.
+* Website inquiries received slow responses.
+* Missed calls were never recovered.
+* Salespeople forgot to follow up.
+* Projects were delayed and never revisited.
+* Unsold proposals were buried in a CRM.
+* Staff turnover caused lead history to disappear.
+* Busy seasons caused valuable opportunities to be neglected.
+
+Include this central statement:
+
+Most contractors do not only have a lead-generation problem. They have a follow-up problem.
+
+How it works
+
+Create a four-step visual workflow.
+
+1. Import
+
+Support:
+
+* CRM exports
+* CSV files
+* Excel spreadsheets
+* Website leads
+* Missed calls
+* Old estimates
+* Unsold proposals
+* Facebook lead exports
+* Google Ads leads
+* Contact lists
+* Generic webhook events
+* Connected CRM records
+
+2. Analyze
+
+The system:
+
+* Cleans records
+* Deduplicates contacts
+* Detects invalid information
+* Flags suppression records
+* Categorizes leads
+* Scores reactivation potential
+* Estimates opportunity value
+* Detects reasons opportunities stalled
+* Recommends the next action
+* Identifies the strongest outreach angle
+
+3. Reactivate
+
+The system prepares personalized:
+
+* SMS messages
+* Emails
+* Call scripts
+* Voicemail scripts
+* Follow-up sequences
+* Estimate reminders
+* Seasonal check-ins
+* Project-status messages
+
+4. Convert
+
+Interested prospects are:
+
+* Flagged as hot
+* Routed to the sales team
+* Added to an active pipeline
+* Offered appointment times
+* Assigned follow-up tasks
+* Tracked through estimate and job stages
+* Attributed to recovered pipeline and revenue
+
+Revenue calculator
+
+Create an interactive calculator.
+
+Inputs:
+
+* Number of dormant leads
+* Average project value
+* Estimated reactivation rate
+* Appointment booking rate
+* Sales close rate
+
+Outputs:
+
+* Estimated conversations restarted
+* Estimated appointments booked
+* Estimated projects sold
+* Estimated recovered revenue
+
+Use:
+
+reactivatedLeads = dormantLeads × reactivationRate
+bookedAppointments = reactivatedLeads × bookingRate
+soldProjects = bookedAppointments × closeRate
+estimatedRevenue = soldProjects × averageProjectValue
+
+Clearly state that all results are estimates and not guarantees.
+
+Pricing
+
+Create editable pricing cards.
+
+Revenue Rescue Core
+
+Starting at $997 per month
+
+Suggested inclusions:
+
+* Up to 2,500 stored leads
+* Monthly lead imports
+* Lead cleanup and deduplication
+* AI analysis and scoring
+* Email campaign preparation
+* Revenue dashboard
+* One CRM or webhook connection
+* Three users
+
+Revenue Rescue Pro
+
+Starting at $1,497 per month
+
+Suggested inclusions:
+
+* Up to 10,000 stored leads
+* SMS and email campaigns
+* Reply classification
+* Appointment routing
+* Five users
+* CRM synchronization
+* Monthly performance reporting
+
+Complete Revenue Engine
+
+Starting at $2,497 per month
+
+Suggested inclusions:
+
+* Revenue Rescue
+* AI Front Desk
+* Lead CRM
+* Voice and SMS
+* Email automation
+* Appointment scheduling
+* Review automation
+* Lead attribution
+* Advanced reporting
+
+Also display:
+
+Revenue Rescue Sprint
+
+Starting at $3,500 one-time
+
+This is the initial cleanup, analysis, and reactivation service for a client’s existing lead database.
+
+Final pricing depends on:
+
+* Lead volume
+* Data quality
+* Messaging volume
+* CRM complexity
+* Number of integrations
+* Number of users
+* Outreach channels
+* White-label requirements
+
+Make all pricing configurable from the MogulForge admin area rather than permanently hard-coded.
+
+⸻
+
+PART 2: MULTI-TENANT ORGANIZATION SYSTEM
+
+Every client company must be represented as an organization or tenant.
+
+Reuse an existing organization model if present. Otherwise create one.
+
+Each organization should support:
+
+* Organization name
+* Legal or display name
+* Industry
+* Website
+* Logo
+* Primary color
+* Accent color
+* Time zone
+* Service areas
+* Business hours
+* Subscription plan
+* Subscription status
+* Enabled modules
+* Allowed origins
+* Custom domain
+* Branding level
+* Support contact
+* Usage limits
+* Data-retention settings
+* Creation date
+* Activation date
+* Suspension status
+
+Every tenant-owned record must contain an organization_id.
+
+This includes:
+
+* Leads
+* Imports
+* Campaigns
+* Messages
+* Conversations
+* Replies
+* Appointments
+* Activities
+* Tasks
+* Integrations
+* CRM mappings
+* API keys
+* Webhooks
+* Suppression records
+* Settings
+* Usage records
+* Billing records
+* Audit logs
+
+Never trust an organization ID supplied by the browser alone.
+
+Derive authorization from the authenticated session and verify organization membership server-side on every request.
+
+Add automated tenant-isolation tests proving users from one organization cannot access records from another organization.
+
+⸻
+
+PART 3: USERS, MEMBERSHIPS, AND ROLES
+
+Support organization memberships and roles.
+
+Roles:
+
+* Organization owner
+* Administrator
+* Sales manager
+* Sales representative
+* Office staff
+* Read-only analyst
+* MogulForge support administrator
+* MogulForge platform administrator
+
+Suggested permissions:
+
+Owner
+
+* Full organization access
+* Billing
+* Team management
+* Integrations
+* Campaign activation
+* Data export
+* Settings
+
+Administrator
+
+* Most organization controls
+* User management
+* Imports
+* Campaigns
+* Integrations
+* Reporting
+
+Sales manager
+
+* View all leads
+* Assign leads
+* Approve campaigns
+* Review team performance
+* Manage pipeline
+
+Sales representative
+
+* View assigned leads
+* Send approved messages
+* Record calls
+* Book appointments
+* Update lead stages
+
+Office staff
+
+* Import leads
+* Update contacts
+* Schedule appointments
+* Review conversations
+
+Read-only analyst
+
+* View dashboards and reports
+* No edits or campaign actions
+
+Enforce permissions on the server, not only in the interface.
+
+⸻
+
+PART 4: FEATURE ENTITLEMENTS
+
+Create server-enforced feature entitlements.
+
+Suggested entitlement keys:
+
+* revenue_rescue
+* lead_import
+* ai_analysis
+* batch_analysis
+* sms_campaigns
+* email_campaigns
+* voice_campaigns
+* reply_classification
+* appointment_booking
+* crm_sync
+* api_access
+* incoming_webhooks
+* outgoing_webhooks
+* advanced_reporting
+* custom_branding
+* custom_domain
+* white_label
+* multiple_pipelines
+* priority_support
+
+The backend must reject unauthorized feature use even when a user manually calls an API endpoint.
+
+Do not rely only on hiding menu items.
+
+⸻
+
+PART 5: CLIENT PROVISIONING
+
+Create a MogulForge administrator workflow called:
+
+Provision New Client
+
+The workflow should allow a platform administrator to:
+
+1. Enter company information.
+2. Select an industry.
+3. Select a subscription plan.
+4. Enable purchased modules.
+5. Configure usage limits.
+6. Add the initial client owner.
+7. Configure branding.
+8. Configure allowed website domains.
+9. Select integration method.
+10. Connect or configure the client CRM.
+11. Map CRM fields.
+12. Configure SMS and email providers.
+13. Configure calendar settings.
+14. Import initial lead data.
+15. Configure campaign rules.
+16. Send test events.
+17. Generate installation instructions.
+18. Activate the organization.
+
+The provisioning workflow should generate an installation kit containing:
+
+* Organization identifier
+* Native website integration instructions
+* Secure embed instructions
+* React integration instructions
+* Plain JavaScript integration instructions
+* Generic CRM webhook instructions
+* API authentication instructions
+* Allowed-origin configuration
+* Webhook endpoints
+* Integration status
+* Required environment variables
+* Test checklist
+* Activation status
+
+A new demo client should be provisionable without changing source code.
+
+⸻
+
+PART 6: CLIENT INTAKE WORKFLOW
+
+Create /revenue-rescue/start.
+
+Use a multi-step progress indicator.
+
+Step 1: Company information
+
+Fields:
+
+* Company name
+* Contact name
+* Contact email
+* Contact phone
+* Website
+* Industry
+* Primary service area
+* Number of salespeople
+* Current CRM
+* Average project value
+* Typical monthly lead volume
+* Approximate dormant lead count
+
+Step 2: Lead sources
+
+Allow multiple selections:
+
+* CRM export
+* CSV spreadsheet
+* Excel spreadsheet
+* Website inquiries
+* Missed calls
+* Old estimates
+* Unsold proposals
+* Facebook leads
+* Google Ads leads
+* Email inbox
+* Connected CRM
+* Generic webhook
+* Other
+
+Step 3: File upload
+
+Support:
+
+* CSV
+* XLSX
+* XLS
+* JSON
+
+Include:
+
+* Drag-and-drop upload
+* File picker
+* File validation
+* File-size display
+* Upload progress
+* Detected row count
+* Detected column preview
+* Ability to remove files
+* Multiple uploads
+* Sample CSV download
+* Helpful validation errors
+
+Create a sample template containing:
+
+* first_name
+* last_name
+* phone
+* email
+* address
+* city
+* state
+* zip
+* project_type
+* estimated_value
+* lead_source
+* created_date
+* last_contact_date
+* status
+* notes
+* assigned_salesperson
+* consent_status
+* original_estimate_amount
+* lost_reason
+* external_record_id
+
+Step 4: Field mapping
+
+Allow mapping uploaded or external fields to MogulForge fields.
+
+Show:
+
+* Source field
+* Sample value
+* MogulForge field
+* Data type
+* Mapping confidence
+* Transformation rule
+* Required status
+
+Attempt automatic matching first.
+
+Allow manual correction.
+
+Step 5: Campaign preferences
+
+Fields:
+
+* Allowed channels
+* Approval mode
+* Desired tone
+* Campaign objective
+* Quiet hours
+* Maximum contact attempts
+* Follow-up spacing
+* Assigned sales team
+* Appointment destination
+* Default booking link
+* Required opt-out language
+
+Approval options:
+
+* Approve every message
+* Approve campaign templates
+* Allow approved automation rules
+* Simulation only
+
+Step 6: Legal and data confirmation
+
+Require confirmation that:
+
+* The company owns or lawfully controls the uploaded data.
+* The company has a lawful basis for permitted outreach.
+* Existing opt-outs and do-not-contact records must be honored.
+* Suppression lists must be imported when available.
+* MogulForge must not contact records marked as opted out.
+* The client is responsible for applicable communication and privacy laws.
+
+Do not present this as legal advice.
+
+Step 7: Review and submit
+
+Show:
+
+* Company information
+* Lead sources
+* Uploaded files
+* Estimated lead count
+* Selected channels
+* Approval mode
+* Campaign rules
+* Integration selections
+* Estimated analysis scope
+
+After submission, route the user to the Revenue Rescue dashboard.
+
+⸻
+
+PART 7: SECURE NATIVE WEBSITE INTEGRATION
+
+For websites and CRMs built by MogulForge, Revenue Rescue should appear as a native authenticated route such as:
+
+clientwebsite.com/dashboard/revenue-rescue
+
+The client website should call the central MogulForge Revenue Rescue API.
+
+Do not duplicate the complete Revenue Rescue backend inside each client repository.
+
+Create a reusable API client or internal package structure for:
+
+* Authentication
+* Organization context
+* Permissions
+* Feature entitlements
+* Lead queries
+* Imports
+* Campaign actions
+* Conversations
+* Appointments
+* Metrics
+* Usage data
+
+Prepare package-ready structures such as:
+
+* @mogulforge/api-client
+* @mogulforge/revenue-rescue
+* @mogulforge/embed
+
+Do not publish packages unless publishing infrastructure is already configured.
+
+Create clean reusable modules and documentation instead.
+
+⸻
+
+PART 8: SECURE EMBED SYSTEM
+
+Create an embeddable Revenue Rescue system for approved client websites.
+
+Support a future installation pattern similar to:
+
+<script
+  src="https://embed.mogulforge.ai/revenue-rescue.js"
+  data-container="mogulforge-revenue-rescue"
+  data-module="dashboard">
+</script>
+<div id="mogulforge-revenue-rescue"></div>
+
+Do not place permanent secret credentials in browser code.
+
+Embed session flow
+
+Implement or prepare this secure flow:
+
+1. A logged-in client user opens their website CRM.
+2. The client website backend authenticates that user.
+3. The client backend requests a short-lived embed session from MogulForge.
+4. MogulForge verifies the client application.
+5. MogulForge issues a short-lived signed token.
+6. The embed loads using that token.
+7. Every API call revalidates the user, tenant, permissions, origin, and expiration.
+
+The token should contain only necessary claims:
+
+* Organization ID
+* User ID
+* Role
+* Permissions
+* Enabled modules
+* Permitted origin
+* Expiration
+* Unique token ID
+
+Use short expiration times.
+
+Support token revocation where practical.
+
+Validate:
+
+* Signature
+* Expiration
+* Approved origin
+* Organization
+* User status
+* Subscription status
+* Enabled modules
+
+Protect against:
+
+* Token replay
+* Cross-origin abuse
+* Unauthorized framing
+* Clickjacking
+* Cross-tenant access
+* Permanent token exposure
+
+Use appropriate Content Security Policy, frame ancestor rules, origin validation, and postMessage validation.
+
+Embeddable modules
+
+Support shared components for:
+
+* Full Revenue Rescue dashboard
+* Revenue summary
+* Hot-opportunity list
+* Lead importer
+* Lead table
+* Lead-detail view
+* Campaign builder
+* Campaign-performance panel
+* Conversation inbox
+* Appointment panel
+* Recovered-revenue chart
+
+The native dashboard and embedded application should use the same underlying component system where possible.
+
+⸻
+
+PART 9: JAVASCRIPT AND REACT INTEGRATION
+
+Prepare a clean developer integration layer.
+
+Suggested React usage:
+
+import { RevenueRescueDashboard } from "@mogulforge/revenue-rescue";
+export default function RevenueRescuePage() {
+  return (
+    <RevenueRescueDashboard
+      sessionToken={sessionToken}
+      defaultView="opportunities"
+      theme="organization"
+    />
+  );
+}
+
+Suggested reusable components:
+
+* RevenueRescueDashboard
+* RevenueSummary
+* HotOpportunityList
+* LeadImporter
+* LeadTable
+* CampaignBuilder
+* ConversationInbox
+* AppointmentPanel
+* RecoveredRevenueChart
+
+Create documentation for:
+
+* React
+* Next.js
+* Vite
+* Plain JavaScript
+* WordPress
+* Traditional server-rendered sites
+* Secure iframe installation
+* Custom client CRM installation
+
+⸻
+
+PART 10: WHITE LABELING
+
+Create organization-level branding settings.
+
+Fields:
+
+* Company display name
+* Logo
+* Favicon
+* Primary color
+* Accent color
+* Portal title
+* Login title
+* Support email
+* Support phone
+* Email sender name
+* SMS sender name where supported
+* Powered-by label
+* Custom portal domain
+* Login background
+* Report branding
+
+Support these levels:
+
+1. MogulForge branded
+2. Powered by MogulForge
+3. Full white label
+
+Full white labeling should be controlled by subscription entitlement.
+
+Branding must never weaken tenant isolation or authorization.
+
+⸻
+
+PART 11: CUSTOM DOMAINS
+
+Prepare support for client portals such as:
+
+portal.clientcompany.com
+
+Store:
+
+* Requested domain
+* Verification status
+* DNS verification token
+* Required DNS records
+* SSL status
+* Activation status
+* Last verification attempt
+* Verification errors
+
+Do not activate a custom domain until:
+
+* Ownership is verified.
+* DNS points to the correct host.
+* HTTPS is available.
+* The domain is associated with exactly one organization.
+
+⸻
+
+PART 12: LEAD IMPORT AND DATA PROCESSING
+
+Build secure import processing.
+
+Support:
+
+* CSV
+* XLSX
+* XLS
+* JSON
+* Generic CRM records
+* Generic webhook records
+
+Processing stages:
+
+1. Uploaded
+2. Validating
+3. Mapping required
+4. Ready to process
+5. Cleaning
+6. Deduplicating
+7. Suppression checking
+8. Importing
+9. Analyzing
+10. Complete
+11. Failed
+12. Partially complete
+
+Include:
+
+* File validation
+* Row validation
+* Column preview
+* Mapping
+* Duplicate detection
+* Invalid-row reporting
+* Rejected-row export
+* Safe retry
+* Rollback where practical
+* Import audit logs
+* Progress indicators
+
+Prevent spreadsheet formula injection when exporting data.
+
+Do not expose raw files publicly.
+
+Use signed or protected storage.
+
+⸻
+
+PART 13: LEAD ANALYSIS AND SCORING
+
+Create a transparent hybrid scoring engine.
+
+Use deterministic signals before AI interpretation where possible.
+
+Positive signals:
+
+* Valid phone or email
+* Recent inquiry
+* High estimated project value
+* Estimate previously issued
+* Project delayed rather than explicitly rejected
+* Multiple prior interactions
+* Customer requested future follow-up
+* Strong interest in notes
+* High-quality lead source
+* Inside service area
+* No recorded opt-out
+
+Negative signals:
+
+* Invalid contact information
+* Duplicate contact
+* Explicit rejection
+* Opt-out
+* Do-not-contact
+* Project completed elsewhere
+* Outside service area
+* Spam
+* Vendor inquiry
+* Extremely old record with no useful information
+* Complaint history
+* Unresolved consent uncertainty
+
+Lead categories:
+
+* Hot opportunity
+* Worth re-engaging
+* Long-term nurture
+* Needs manual review
+* Invalid or duplicate
+* Do not contact
+* Previously lost
+* Existing customer
+* No longer qualified
+
+Each lead should contain:
+
+* Score from 0–100
+* Category
+* Project type
+* Estimated value
+* Lead source
+* Created date
+* Last contact date
+* Days dormant
+* Reason stalled
+* Intent level
+* Recommended channel
+* Recommended action
+* Message angle
+* AI summary
+* Confidence
+* Risk flags
+* Consent status
+* Suppression status
+* Assigned salesperson
+* Campaign status
+* Pipeline status
+
+Show why the lead received its score.
+
+Do not make the score a black box.
+
+Structured AI output
+
+Create a validated structured output schema similar to:
+
+{
+  "leadScore": 87,
+  "category": "hot_opportunity",
+  "projectType": "roof_replacement",
+  "estimatedValue": 18500,
+  "intentLevel": "high",
+  "reasonStalled": "estimate_sent_no_follow_up",
+  "recommendedChannel": "sms_then_call",
+  "recommendedAction": "reopen_conversation_and_offer_inspection",
+  "messageAngle": "reference_previous_estimate_and_current_availability",
+  "summary": "The homeowner received an estimate and did not explicitly decline. The notes suggest timing concerns rather than rejection.",
+  "riskFlags": [],
+  "requiresHumanReview": false,
+  "confidence": 0.91
+}
+
+The AI must never independently establish legal consent with certainty.
+
+Consent eligibility must be based on stored records, opt-outs, suppression lists, client confirmations, and configured business rules.
+
+The AI may flag uncertainty but may not override suppression controls.
+
+All AI calls must run server-side.
+
+Never expose AI provider keys in the browser.
+
+⸻
+
+PART 14: PERSONALIZED MESSAGE GENERATION
+
+Create server-side generation endpoints for:
+
+* SMS
+* Email
+* Call script
+* Voicemail script
+* Manual follow-up note
+* Multi-step follow-up sequence
+
+Use available information such as:
+
+* First name
+* Contractor name
+* Project type
+* Previous interaction
+* Original inquiry date
+* Estimate amount
+* Lead source
+* Known objection
+* Service area
+* Season
+* Campaign objective
+* Campaign tone
+* Assigned salesperson
+
+Never invent facts not present in the lead record.
+
+When information is missing, use conservative language.
+
+Bad example:
+
+“We sent you a $22,000 estimate last year.”
+
+Safer example:
+
+“You previously contacted us about your roofing project, and I wanted to check whether you still need help.”
+
+Message rules:
+
+* Sound human
+* Remain concise
+* Avoid hype
+* Avoid fake urgency
+* Avoid manipulative pressure
+* Identify the business
+* Respect quiet hours
+* Include opt-out language when required
+* Stop after negative replies
+* Escalate sensitive responses
+* Avoid repeated contact beyond configured limits
+* Never contact suppressed records
+
+⸻
+
+PART 15: CAMPAIGN BUILDER
+
+Create /dashboard/revenue-rescue/campaigns.
+
+Campaign fields:
+
+* Campaign name
+* Objective
+* Audience filters
+* Lead categories
+* Minimum score
+* Project types
+* Lead source
+* Channel
+* Tone
+* Sender identity
+* Schedule
+* Time zone
+* Approval mode
+* Follow-up delay
+* Maximum attempts
+* Stop conditions
+* Booking link
+* Assigned team member
+* Simulation or live mode
+
+Templates:
+
+* Old Estimate Follow-Up
+* Delayed Project Check-In
+* Missed Website Inquiry
+* Seasonal Inspection
+* Proposal Revisit
+* Previous Customer Upsell
+* Missed Call Recovery
+* Long-Term Nurture Restart
+
+Before activation, display:
+
+* Eligible leads
+* Excluded leads
+* Duplicate contacts
+* Opted-out contacts
+* Suppressed contacts
+* Missing-consent contacts
+* Invalid phone numbers
+* Invalid email addresses
+* Quiet-hour conflicts
+* Sample messages
+* Estimated usage
+* Estimated cost where available
+
+Require human confirmation before live campaign activation.
+
+If providers are not connected, default to:
+
+Simulation Mode — No messages will be sent.
+
+Do not report simulated sends as delivered messages.
+
+⸻
+
+PART 16: REPLY CLASSIFICATION
+
+Create a reply-processing abstraction.
+
+Categories:
+
+* Interested
+* Wants appointment
+* Needs more information
+* Not ready
+* Follow up later
+* Already hired someone
+* Wrong person
+* Not interested
+* Opt out
+* Complaint
+* Sensitive
+* Unknown
+
+Rules:
+
+* Interested → notify assigned salesperson.
+* Wants appointment → begin scheduling.
+* Needs information → prepare human-reviewed response.
+* Follow up later → create future task.
+* Already hired someone → close or move to long-term nurture.
+* Wrong person → correct or suppress.
+* Not interested → stop the campaign.
+* Opt out → immediately suppress all future automated outreach.
+* Complaint → stop automation and escalate.
+* Sensitive → require human review.
+* Unknown → require human review.
+
+Opt-out handling must never be blocked by subscription or usage limits.
+
+⸻
+
+PART 17: APPOINTMENT BOOKING
+
+Create a provider-neutral appointment layer.
+
+Support:
+
+* Manual availability
+* Appointment types
+* Assigned salesperson
+* Requested date and time
+* Property address
+* Project details
+* Confirmation status
+* Reschedule status
+* Cancellation status
+* Calendar provider
+* External calendar event ID
+* CRM synchronization status
+
+Prepare adapters for:
+
+* Google Calendar
+* Outlook Calendar
+* Calendly
+* Generic booking URL
+* Manual scheduling
+
+Do not claim an external calendar is connected unless it actually works.
+
+⸻
+
+PART 18: CLIENT DASHBOARD
+
+Create a premium dashboard at /dashboard/revenue-rescue.
+
+Summary cards:
+
+* Total leads imported
+* Leads analyzed
+* High-potential opportunities
+* Active conversations
+* Appointments booked
+* Estimates issued
+* Recovered pipeline value
+* Estimated won revenue
+* Campaign reply rate
+* Opt-out rate
+
+Main sections:
+
+Opportunity funnel
+
+Stages:
+
+* Imported
+* Cleaned
+* Analyzed
+* Approved
+* Contacted
+* Replied
+* Qualified
+* Appointment booked
+* Estimate issued
+* Won
+* Lost
+* Suppressed
+
+Hot opportunities
+
+Show:
+
+* Name
+* Project
+* Score
+* Estimated value
+* Last contact
+* Recommended action
+* Reply status
+* Assigned salesperson
+
+Campaign performance
+
+Show:
+
+* Messages prepared
+* Messages approved
+* Messages sent
+* Delivery rate
+* Email open rate where available
+* Reply rate
+* Positive reply rate
+* Opt-out rate
+* Appointment rate
+* Pipeline created
+
+Revenue recovered
+
+Display recovered pipeline and won revenue over time.
+
+Recent activity
+
+Examples:
+
+* Lead scored as high potential
+* Positive reply received
+* Appointment booked
+* Message awaiting approval
+* Duplicate merged
+* Contact suppressed
+* Proposal follow-up generated
+* CRM sync completed
+* Integration error detected
+
+⸻
+
+PART 19: LEAD MANAGEMENT
+
+Create /dashboard/revenue-rescue/leads.
+
+Include:
+
+* Search
+* Sorting
+* Pagination
+* Bulk selection
+* Saved filters
+* Column controls
+* Score filters
+* Category filters
+* Source filters
+* Project filters
+* Date filters
+* Campaign filters
+* Assignment filters
+* Pipeline filters
+
+Suggested columns:
+
+* Name
+* Phone
+* Email
+* Project type
+* Estimated value
+* Source
+* Score
+* Category
+* Days dormant
+* Last contact
+* Campaign
+* Reply sentiment
+* Assigned salesperson
+* Recommended action
+* CRM sync status
+
+Lead detail should show:
+
+* Contact information
+* Project history
+* Original inquiry
+* Notes
+* Estimates
+* Communication timeline
+* Score explanation
+* Recommended strategy
+* Generated SMS
+* Generated email
+* Call script
+* Consent status
+* Suppression status
+* Appointment information
+* CRM record link
+* Pipeline status
+* Audit history
+
+Actions:
+
+* Approve
+* Edit
+* Regenerate
+* Assign salesperson
+* Add to campaign
+* Mark contacted
+* Mark qualified
+* Book appointment
+* Mark won
+* Mark lost
+* Suppress contact
+* Synchronize CRM
+* Add internal note
+
+⸻
+
+PART 20: CRM INTEGRATION FRAMEWORK
+
+Create a provider-neutral CRM adapter interface.
+
+The adapter should support available combinations of:
+
+* OAuth connection
+* API-key connection
+* Import contacts
+* Export contacts
+* Pull opportunities
+* Push opportunity updates
+* Pull notes
+* Push notes
+* Create tasks
+* Create appointments
+* Update pipeline stages
+* Register webhooks
+* Receive webhooks
+* Process opt-outs
+* Store external record links
+
+Prepare integration cards for:
+
+* HubSpot
+* GoHighLevel
+* JobNimbus
+* ServiceTitan
+* Salesforce
+* Buildertrend
+* Zapier
+* Make
+* n8n
+* Generic webhook
+* Generic REST API
+* CSV import
+
+Label each integration accurately:
+
+* Connected
+* Available
+* Setup required
+* In development
+* Coming soon
+
+Do not represent placeholder adapters as functional integrations.
+
+⸻
+
+PART 21: CRM OPERATING MODES
+
+Support two organization-level CRM modes.
+
+MogulForge CRM Mode
+
+MogulForge is the primary source of truth for:
+
+* Leads
+* Messages
+* Appointments
+* Tasks
+* Campaigns
+* Pipeline stages
+
+Connected CRM Mode
+
+The external CRM remains the source of truth.
+
+Revenue Rescue stores a synchronized working record.
+
+For synchronized records, store:
+
+* Provider
+* External record ID
+* External record URL
+* External created date
+* External updated date
+* MogulForge updated date
+* Last synchronized date
+* Sync direction
+* Sync status
+* Conflict status
+* Sync error
+* Record checksum or version where useful
+
+Never silently overwrite newer data.
+
+Provide conflict handling and manual review.
+
+⸻
+
+PART 22: CRM FIELD MAPPING
+
+Create a field-mapping interface.
+
+Display:
+
+* External field
+* Sample value
+* MogulForge field
+* Data type
+* Transformation rule
+* Sync direction
+* Required status
+* Mapping confidence
+
+Support:
+
+* Custom fields
+* Value transformations
+* Date-format conversion
+* Phone normalization
+* Currency parsing
+* Status mapping
+* Pipeline-stage mapping
+* Boolean conversion
+* Null handling
+
+Allow administrators to test mappings before activating synchronization.
+
+⸻
+
+PART 23: INCOMING WEBHOOKS
+
+Create organization-specific incoming webhook endpoints.
+
+Supported event types should include:
+
+* lead.created
+* lead.updated
+* lead.deleted
+* lead.status_changed
+* contact.opted_out
+* estimate.created
+* estimate.sent
+* estimate.lost
+* appointment.booked
+* appointment.cancelled
+* job.won
+* job.lost
+
+Require signed webhook requests.
+
+Validate:
+
+* Signature
+* Timestamp
+* Organization
+* Event type
+* External event ID
+* Replay protection
+
+Store:
+
+* Provider
+* Organization ID
+* External event ID
+* Event type
+* Received time
+* Payload hash
+* Processing status
+* Processing attempts
+* Last error
+* Completed time
+
+Process webhooks idempotently.
+
+Duplicate deliveries must not create duplicate leads, messages, appointments, or activities.
+
+⸻
+
+PART 24: OUTGOING WEBHOOKS
+
+Allow organizations to register outgoing webhook destinations.
+
+Events:
+
+* lead.imported
+* lead.analyzed
+* lead.score_changed
+* lead.reactivation_recommended
+* campaign.created
+* campaign.started
+* message.sent
+* message.delivered
+* prospect.replied
+* prospect.interested
+* contact.opted_out
+* appointment.requested
+* appointment.booked
+* lead.marked_won
+* revenue.recovered
+
+Sign outgoing webhook requests.
+
+Provide:
+
+* Webhook secret
+* Secret rotation
+* Delivery logs
+* Response status
+* Retry history
+* Manual retry
+* Exponential backoff
+* Failure alerts
+* Disable control
+* Test event
+
+Never include unnecessary sensitive data in webhook payloads.
+
+⸻
+
+PART 25: VERSIONED REST API
+
+Create a versioned public API under:
+
+/api/v1/
+
+Suggested resources:
+
+* Organizations
+* Users
+* Leads
+* Imports
+* Campaigns
+* Messages
+* Conversations
+* Replies
+* Appointments
+* Activities
+* Metrics
+* Integrations
+* Webhooks
+* Usage
+
+Support scoped API credentials.
+
+Scopes:
+
+* leads:read
+* leads:write
+* imports:read
+* imports:write
+* campaigns:read
+* campaigns:write
+* messages:read
+* messages:send
+* appointments:read
+* appointments:write
+* metrics:read
+* webhooks:manage
+* integrations:manage
+
+Requirements:
+
+* Authentication
+* Authorization
+* Pagination
+* Filtering
+* Sorting
+* Structured errors
+* Input validation
+* Rate limiting
+* Audit logging
+* Idempotency keys for sensitive writes
+* Credential rotation
+* Credential revocation
+
+Never store raw API keys after creation.
+
+Store a secure hash and show the complete key only once.
+
+⸻
+
+PART 26: SUBSCRIPTIONS AND USAGE TRACKING
+
+Create provider-neutral subscription architecture.
+
+Track usage by organization:
+
+* Stored leads
+* Imported leads
+* Leads analyzed
+* AI analysis jobs
+* Generated messages
+* SMS messages
+* Emails
+* Voice minutes
+* CRM synchronization operations
+* API requests
+* Webhook events
+* Active users
+* Connected CRMs
+* Storage
+
+Support:
+
+* Monthly limits
+* Usage warnings
+* Overage calculations
+* Plan upgrades
+* Plan downgrades
+* Suspended accounts
+* Trial accounts
+* Internal accounts
+* Custom enterprise plans
+
+Create warnings at:
+
+* 75%
+* 90%
+* 100%
+
+Do not block:
+
+* Opt-out processing
+* Suppression updates
+* Security events
+* Compliance events
+* Data exports required for account closure
+
+Do not hard-code the architecture to a single billing provider.
+
+Prepare an adapter layer for a future billing platform.
+
+⸻
+
+PART 27: DATABASE DESIGN
+
+Reuse the current database and ORM.
+
+Create or extend models similar to:
+
+organizations
+
+* id
+* name
+* slug
+* industry
+* website
+* logo_url
+* primary_color
+* accent_color
+* timezone
+* plan_id
+* subscription_status
+* crm_mode
+* branding_level
+* custom_domain
+* custom_domain_status
+* settings
+* created_at
+* updated_at
+
+organization_memberships
+
+* id
+* organization_id
+* user_id
+* role
+* status
+* created_at
+* updated_at
+
+organization_entitlements
+
+* id
+* organization_id
+* feature_key
+* enabled
+* limit_value
+* configuration
+* created_at
+* updated_at
+
+revenue_rescue_projects
+
+* id
+* organization_id
+* name
+* status
+* campaign_objective
+* approval_mode
+* created_at
+* updated_at
+
+lead_imports
+
+* id
+* organization_id
+* project_id
+* file_name
+* file_type
+* storage_path
+* total_rows
+* valid_rows
+* duplicate_rows
+* rejected_rows
+* suppressed_rows
+* field_mapping
+* status
+* created_by
+* created_at
+* updated_at
+
+rescue_leads
+
+* id
+* organization_id
+* project_id
+* import_id
+* external_provider
+* external_record_id
+* external_record_url
+* first_name
+* last_name
+* company
+* phone
+* email
+* address
+* city
+* state
+* postal_code
+* project_type
+* estimated_value
+* lead_source
+* original_created_at
+* last_contact_at
+* original_status
+* notes
+* assigned_user_id
+* consent_status
+* suppression_status
+* lost_reason
+* lead_score
+* lead_category
+* intent_level
+* reason_stalled
+* recommended_channel
+* recommended_action
+* message_angle
+* ai_summary
+* ai_confidence
+* requires_human_review
+* campaign_status
+* pipeline_status
+* last_synced_at
+* sync_status
+* created_at
+* updated_at
+
+rescue_campaigns
+
+* id
+* organization_id
+* project_id
+* name
+* objective
+* tone
+* channel
+* audience_filters
+* approval_mode
+* schedule
+* status
+* mode
+* created_by
+* created_at
+* updated_at
+
+rescue_messages
+
+* id
+* organization_id
+* lead_id
+* campaign_id
+* channel
+* direction
+* content
+* status
+* provider
+* provider_message_id
+* generated_by_ai
+* approved_by
+* approved_at
+* sent_at
+* delivered_at
+* replied_at
+* error_message
+* created_at
+* updated_at
+
+rescue_activities
+
+* id
+* organization_id
+* lead_id
+* campaign_id
+* activity_type
+* title
+* description
+* metadata
+* created_by
+* created_at
+
+rescue_appointments
+
+* id
+* organization_id
+* lead_id
+* assigned_user_id
+* appointment_type
+* scheduled_start
+* scheduled_end
+* timezone
+* address
+* status
+* provider
+* external_event_id
+* notes
+* created_at
+* updated_at
+
+suppression_records
+
+* id
+* organization_id
+* phone
+* email
+* suppression_type
+* reason
+* source
+* created_at
+
+crm_connections
+
+* id
+* organization_id
+* provider
+* connection_type
+* status
+* encrypted_credentials
+* external_account_id
+* settings
+* last_synced_at
+* created_at
+* updated_at
+
+crm_field_mappings
+
+* id
+* organization_id
+* crm_connection_id
+* external_field
+* internal_field
+* data_type
+* transform_rule
+* sync_direction
+* required
+* created_at
+* updated_at
+
+webhook_endpoints
+
+* id
+* organization_id
+* direction
+* endpoint_url
+* secret_hash
+* enabled
+* event_types
+* created_at
+* updated_at
+
+webhook_events
+
+* id
+* organization_id
+* webhook_endpoint_id
+* provider
+* external_event_id
+* event_type
+* payload_hash
+* processing_status
+* retry_count
+* last_error
+* received_at
+* processed_at
+
+embed_sessions
+
+* id
+* organization_id
+* user_id
+* token_id
+* allowed_origin
+* modules
+* expires_at
+* revoked_at
+* created_at
+
+api_credentials
+
+* id
+* organization_id
+* name
+* key_prefix
+* key_hash
+* scopes
+* last_used_at
+* expires_at
+* revoked_at
+* created_at
+
+usage_records
+
+* id
+* organization_id
+* usage_type
+* quantity
+* period_start
+* period_end
+* metadata
+* created_at
+
+audit_logs
+
+* id
+* organization_id
+* user_id
+* action
+* resource_type
+* resource_id
+* metadata
+* ip_address
+* user_agent
+* created_at
+
+Use secure encryption for sensitive provider credentials.
+
+⸻
+
+PART 28: DEMO MODE
+
+Create a realistic demo organization with approximately 40 demo leads.
+
+All demo data must be labeled as demo data.
+
+Include complete journeys:
+
+1. Old estimate → SMS prepared → approved → simulated reply → appointment booked
+2. Missed website inquiry → email generated → information requested → assigned to salesperson
+3. Delayed project → follow-up date created
+4. Opt-out reply → contact immediately suppressed
+5. Duplicate records → merge recommendation
+6. Invalid phone → email-only recommendation
+7. High-value proposal → manual approval required
+8. Connected CRM record → synchronized stage update
+9. Webhook lead → imported and scored
+10. Campaign usage → dashboard metrics updated
+
+Include a Reset Demo action for authorized users.
+
+Simulation mode must never send live messages.
+
+⸻
+
+PART 29: SECURITY REQUIREMENTS
+
+Implement:
+
+* Server-side authorization
+* Tenant isolation
+* Strong input validation
+* File-type and file-size validation
+* Protected file storage
+* Secure secrets handling
+* Credential encryption
+* Rate limiting
+* Audit logs
+* API-key hashing
+* Webhook signatures
+* Replay protection
+* Token expiration
+* Approved-origin validation
+* Cross-site scripting protection
+* SQL injection protection through ORM and validation
+* Spreadsheet formula-injection prevention
+* Confirmation for destructive actions
+* Suppression enforcement
+* Opt-out preservation
+* Least-privilege access
+* Safe error messages
+* Sensitive-data log redaction
+
+Never expose:
+
+* AI keys
+* SMS provider keys
+* Email provider keys
+* CRM credentials
+* Calendar credentials
+* Webhook secrets
+* Permanent embed secrets
+
+⸻
+
+PART 30: ANALYTICS
+
+Use the existing analytics system if present.
+
+Track non-sensitive events:
+
+* revenue_rescue_page_viewed
+* revenue_rescue_cta_clicked
+* revenue_calculator_used
+* revenue_rescue_intake_started
+* revenue_rescue_intake_completed
+* lead_file_uploaded
+* field_mapping_completed
+* import_processed
+* lead_analysis_started
+* lead_analysis_completed
+* message_generated
+* message_approved
+* campaign_created
+* campaign_previewed
+* campaign_launched
+* campaign_paused
+* positive_reply_received
+* appointment_booked
+* lead_marked_won
+* lead_suppressed
+* client_provisioned
+* embed_session_created
+* crm_connected
+* crm_sync_completed
+* crm_sync_failed
+* webhook_received
+* api_key_created
+* subscription_limit_warning
+
+Do not send names, phone numbers, emails, message contents, addresses, or other lead PII to analytics.
+
+⸻
+
+PART 31: NOTIFICATIONS
+
+Prepare reusable notifications for:
+
+* Import complete
+* Import failed
+* Mapping required
+* Analysis complete
+* Campaign ready for approval
+* Hot lead identified
+* Positive reply received
+* Appointment booked
+* Campaign paused
+* High opt-out rate
+* Usage limit warning
+* CRM connection failed
+* CRM sync failed
+* Webhook delivery failed
+* API credential created
+* New client provisioned
+
+Use the existing provider when configured.
+
+Otherwise create development previews and provider abstractions.
+
+⸻
+
+PART 32: TESTING
+
+Add meaningful automated tests for:
+
+* Tenant isolation
+* Role authorization
+* Feature entitlement enforcement
+* CSV parsing
+* Excel parsing
+* Field mapping
+* Duplicate detection
+* Phone normalization
+* Lead scoring
+* Suppression enforcement
+* Opt-out handling
+* Campaign eligibility
+* Simulation-mode protection
+* Revenue calculator
+* Secure embed-token validation
+* Allowed-origin enforcement
+* API-key authentication
+* API scope enforcement
+* Webhook signature validation
+* Webhook replay protection
+* Webhook idempotency
+* CRM synchronization
+* Sync conflict detection
+* Usage tracking
+* Import rollback
+* File validation
+
+Add an end-to-end smoke test:
+
+1. Provision a demo organization.
+2. Create the organization owner.
+3. Upload the sample CSV.
+4. Map fields.
+5. Process the import.
+6. Analyze leads.
+7. Generate outreach.
+8. Create a campaign.
+9. Preview the campaign.
+10. Confirm simulation mode.
+11. Simulate a positive reply.
+12. Book an appointment.
+13. Update recovered pipeline.
+14. Create a secure embed session.
+15. Load the embedded dashboard on an approved origin.
+16. Send a signed webhook.
+17. Verify the external CRM record mapping.
+18. Confirm tenant isolation throughout.
+
+⸻
+
+PART 33: IMPLEMENTATION ORDER
+
+Implement in this order.
+
+Phase 1: Repository audit and product foundation
+
+* Inspect framework
+* Inspect routing
+* Inspect authentication
+* Inspect organizations
+* Inspect database
+* Inspect dashboard
+* Inspect styling
+* Inspect current APIs
+* Document the architecture
+* Identify reusable components
+
+Phase 2: Core user-facing MVP
+
+* Public landing page
+* Revenue calculator
+* Intake workflow
+* File upload
+* Field mapping
+* Demo dashboard
+* Lead table
+* Lead detail
+* Demo campaigns
+* Demo conversations
+* Demo appointments
+
+Phase 3: Multi-tenant foundation
+
+* Organizations
+* Memberships
+* Roles
+* Entitlements
+* Tenant-scoped queries
+* Tenant isolation tests
+* MogulForge admin portal
+* Client provisioning
+
+Phase 4: Real data processing
+
+* Secure import processing
+* Data validation
+* Deduplication
+* Suppression handling
+* Deterministic scoring
+* Import history
+* Audit logs
+
+Phase 5: AI capabilities
+
+* Server-side AI service
+* Structured analysis
+* Message generation
+* Batch processing
+* Retry handling
+* Human approval workflow
+
+Phase 6: Installation and embedding
+
+* Central API client
+* Native website module
+* Secure embed sessions
+* Approved-origin enforcement
+* Full dashboard embed
+* Modular widgets
+* Installation documentation
+
+Phase 7: Integration framework
+
+* Generic REST API
+* Incoming webhooks
+* Outgoing webhooks
+* Generic CRM adapter
+* CRM field mapper
+* CRM synchronization
+* Conflict handling
+* Zapier, Make, and n8n-compatible workflows
+
+Phase 8: Usage and subscriptions
+
+* Usage records
+* Plan limits
+* Entitlement enforcement
+* Usage warnings
+* Billing-provider abstraction
+* Upgrade interface
+
+Do not delay the core MVP while attempting to complete every future CRM integration.
+
+Build the generic connector framework first.
+
+⸻
+
+ACCEPTANCE CRITERIA
+
+The build is complete when:
+
+1. Revenue Rescue is hosted as one central multi-tenant application.
+2. Multiple organizations can use it without separate codebases.
+3. Tenant data is isolated.
+4. Role permissions are enforced server-side.
+5. Feature entitlements are enforced server-side.
+6. A MogulForge administrator can provision a client without changing code.
+7. A client can complete intake.
+8. CSV and Excel data can be uploaded and previewed.
+9. Fields can be mapped.
+10. Leads can be imported, deduplicated, and scored.
+11. Suppressed and opted-out contacts cannot enter campaigns.
+12. A campaign can be created and previewed.
+13. Simulation mode cannot send messages.
+14. Personalized messages can be generated securely.
+15. The dashboard displays opportunities and recovered pipeline.
+16. A native MogulForge website route can use the central API.
+17. A secure dashboard embed can load on an approved domain.
+18. Permanent secrets are not exposed in browser code.
+19. A generic signed incoming webhook can create or update a lead.
+20. A signed outgoing webhook can be tested and retried.
+21. API credentials support scopes, rotation, and revocation.
+22. External CRM record IDs are stored and synchronized.
+23. CRM field mappings can be configured.
+24. Opt-outs synchronize immediately.
+25. Organization branding applies to native and embedded views.
+26. Usage is tracked by organization.
+27. The platform supports configurable plans and limits.
+28. The experience works on desktop and mobile.
+29. Existing MogulForge functionality remains intact.
+30. Type checking, linting, migrations, automated tests, and production builds pass.
+
+⸻
+
+FINAL DELIVERY REQUIREMENTS
+
+After implementation:
+
+1. Run the application.
+2. Run all database migrations.
+3. Run type checking.
+4. Run linting.
+5. Run automated tests.
+6. Run the production build.
+7. Fix all errors.
+8. Test the public landing page.
+9. Test the intake workflow.
+10. Test file import and mapping.
+11. Test the demo dashboard.
+12. Test tenant isolation.
+13. Test role permissions.
+14. Test suppression and opt-out enforcement.
+15. Test simulation mode.
+16. Test secure embedding on an approved origin.
+17. Test rejection on an unapproved origin.
+18. Test a signed incoming webhook.
+19. Test a signed outgoing webhook.
+20. Test generic CRM synchronization.
+21. Verify mobile responsiveness.
+22. Verify that no permanent credentials are exposed in frontend code.
+
+Provide a final implementation report containing:
+
+* Existing architecture discovered
+* Pages created
+* Components created
+* Database models added or changed
+* API endpoints created
+* Authentication and authorization approach
+* Tenant-isolation approach
+* Embed architecture
+* CRM integration architecture
+* Working integrations
+* Placeholder integrations
+* Environment variables required
+* Migrations applied
+* Tests completed
+* Known limitations
+* Recommended next development phase
+
+Do not claim a feature works unless it was implemented and tested.
+
+Begin by auditing the existing MogulForge repository. Then build the strongest functional version possible while preserving the existing site and avoiding unnecessary rewrites.
