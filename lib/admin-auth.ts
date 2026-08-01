@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { getCurrentUser } from "./auth";
 
 const COOKIE = "mf_admin";
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -49,4 +50,14 @@ export async function isAdmin() {
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
   return scope === "admin" && Number(expiry) > Date.now();
+}
+
+/**
+ * MogulForge platform admin check for admin pages: the legacy ADMIN_PASSWORD cookie
+ * is folded in as platform admin, alongside signed-in users with a platform role.
+ */
+export async function isPlatformAdmin() {
+  if (await isAdmin()) return true;
+  const user = await getCurrentUser();
+  return Boolean(user?.platformRole);
 }
