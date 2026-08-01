@@ -58,10 +58,11 @@ async function sendViaResend(subject: string, html: string) {
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
   if (!to) throw new Error("LEAD_DIGEST_TO is not configured");
   const from = process.env.LEAD_DIGEST_FROM ?? "MogulForge Leads <onboarding@resend.dev>";
+  const replyTo = process.env.LEAD_DIGEST_REPLY_TO ?? "diazdestination@gmail.com";
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, html }),
+    body: JSON.stringify({ from, to, subject, html, reply_to: replyTo }),
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
