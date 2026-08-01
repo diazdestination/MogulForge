@@ -19,6 +19,7 @@ export const IMPORT_STATUS_LABELS: Record<string, string> = {
   deduplicating: "Deduplicating",
   suppression_checking: "Checking suppressions",
   importing: "Importing",
+  analyzing: "Analyzing",
   complete: "Complete",
   failed: "Failed",
   partial: "Partial",

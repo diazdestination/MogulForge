@@ -2,3 +2,4 @@
 - [Lint purity rule in server components](lint-server-component-purity.md) — react-hooks/purity errors on Date.now() in app/ pages; move time logic into lib helpers, and lint app/lib/components only.
 - [Resend email setup](resend-email.md) — digest sends from onboarding@resend.dev until domain verifies; autoscale means the in-app timer only fires while warm.
 - [Testing TS modules + xlsx install](testing-ts-modules.md) — node:test imports pure lib .ts directly (needs explicit .ts relative imports); xlsx comes from the SheetJS CDN tarball, not npm.
+- [Task-env setup](task-env-setup.md) — isolated task environments can start with an empty Postgres and missing node_modules; npm install + apply scripts/db/*.sql (idempotent) before HTTP tests.

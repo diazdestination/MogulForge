@@ -190,6 +190,16 @@ export async function setImportStage(
   );
 }
 
+/** Appends a stage-log entry WITHOUT changing the import's status (e.g. the
+ * post-import "analyzing" hand-off to the analysis engine). */
+export async function appendImportLogEntry(organizationId: string, importId: string, stage: string, detail?: string): Promise<void> {
+  const entry: StageLogEntry = { stage, at: new Date().toISOString(), ...(detail ? { detail } : {}) };
+  await getPool().query(
+    "UPDATE lead_imports SET stage_log = stage_log || $3::jsonb, updated_at = now() WHERE organization_id = $1 AND id = $2",
+    [organizationId, importId, JSON.stringify([entry])],
+  );
+}
+
 /**
  * Atomically claims an import for a pipeline run: only succeeds when the import
  * is currently in a startable status, so two concurrent runs cannot double-import.

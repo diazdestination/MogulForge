@@ -5,6 +5,7 @@ import { parseUploadedFile, UploadParseError } from "./parse-upload.ts";
 import { cleanText, normalizeConsent, normalizeDate, normalizeEmail, normalizeMoney, normalizePhone } from "./normalize.ts";
 import {
   addSuppressionRecords,
+  appendImportLogEntry,
   claimImportForRun,
   clearImportResults,
   findExistingLeadKeys,
@@ -18,6 +19,8 @@ import {
   type RejectedRow,
 } from "./store.ts";
 import { logAudit } from "../audit";
+import { getEntitlement } from "../tenant";
+import { startAnalysisRun } from "../rescue-analysis/engine.ts";
 
 /**
  * Staged import pipeline: cleaning → deduplicating → suppression checking →
@@ -266,6 +269,27 @@ async function processClaimedImport(organizationId: string, importId: string, ac
       targetId: importId,
       metadata: { status: finalStatus, fileName: record.fileName, rowCount: rows.length, importedCount, duplicateCount, suppressedCount, invalidCount },
     });
+
+    // ---- Hand-off: analyzing ---------------------------------------------
+    // Newly imported leads land as analysis_status = 'pending'. When the org
+    // has the AI Analysis module, the import flows straight into an analysis
+    // run (logged on the import's stage log; progress lives on the run).
+    if (importedCount > 0) {
+      try {
+        const entitlement = await getEntitlement(organizationId, "ai_analysis");
+        if (entitlement?.enabled) {
+          const result = await startAnalysisRun(organizationId, { importId, actorLabel });
+          if (result.started) {
+            await appendImportLogEntry(organizationId, importId, "analyzing", `Analyzing ${result.run.totalCount.toLocaleString()} imported lead(s) — scores and categories will appear as the run progresses.`);
+          } else if (result.reason === "run_in_progress") {
+            await appendImportLogEntry(organizationId, importId, "analyzing", "Another analysis run is in progress; these leads will be picked up by the next run.");
+          }
+        }
+      } catch (analysisError) {
+        // Analysis kickoff must never fail the import itself.
+        console.error("Post-import analysis kickoff failed", importId, analysisError);
+      }
+    }
   } catch (error) {
     console.error("Lead import pipeline failed", importId, error);
     await setImportStage(organizationId, importId, "failed", undefined, {
