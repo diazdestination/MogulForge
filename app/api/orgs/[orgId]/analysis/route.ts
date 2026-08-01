@@ -4,6 +4,7 @@ import { IMPORT_WRITE_ROLES } from "@/lib/roles";
 import { listAnalysisRuns, getActiveRun } from "@/lib/rescue-analysis/store";
 import { startAnalysisRun } from "@/lib/rescue-analysis/engine";
 import { logAudit } from "@/lib/audit";
+import { requireActionCapacity } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,9 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
   const { user, org } = await requireMember(orgId, IMPORT_WRITE_ROLES);
   await requireEntitlement(org.id, "ai_analysis");
 
+  // Usage gate: starting an AI analysis run counts against the plan's AI-job limit.
+  await requireActionCapacity(org.id, { ai_jobs: 1 });
+
   const body = await readJson(request).catch(() => ({}) as Record<string, unknown>);
   const importId = typeof body.importId === "string" && body.importId.trim() !== "" ? body.importId.trim() : null;
 
@@ -35,6 +39,9 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
   if (!result.started) {
     if (result.reason === "run_in_progress") {
       throw new ApiError(409, "An analysis run is already in progress for this organization. Wait for it to finish.", "run_in_progress");
+    }
+    if (result.reason === "usage_blocked") {
+      throw new ApiError(403, result.message, "usage_limit_reached");
     }
     throw new ApiError(400, "No leads are waiting for analysis. Import leads first, or re-run after new imports.", "no_leads");
   }

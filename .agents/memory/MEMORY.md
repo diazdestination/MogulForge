@@ -5,3 +5,4 @@
 - [Task-env setup](task-env-setup.md) — isolated task environments can start with an empty Postgres and missing node_modules; npm install + apply scripts/db/*.sql (idempotent) before HTTP tests.
 - [Node type-stripping limits](node-type-stripping.md) — unit-testable libs must avoid TS syntax needing transformation (constructor param properties, enums); tsc passes but node --test fails.
 - [Embed security model](embed-security-model.md) — embed token rides the iframe query string so the proxy can pin per-org frame-ancestors CSP; short TTL + per-call origin checks make that acceptable.
+- [Per-org theming](per-org-theming.md) — Tailwind colors are static build-time hex; org branding accents must be inline styles, never CSS vars or utility classes.

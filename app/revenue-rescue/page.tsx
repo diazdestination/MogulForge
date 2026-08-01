@@ -2,6 +2,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Calculator, Database, MessageSquareText, Radar, Sparkles, Target } from "lucide-react";
 import { exampleMetrics, pricingFactors, rescuePlans } from "@/lib/rescue-config";
+import { listPublicPlans } from "@/lib/subscriptions";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Pricing cards are DB-driven (edited at /admin/subscriptions), falling back
+ * to the static config when the database is unreachable or has no public plans.
+ */
+async function loadPricingPlans() {
+  try {
+    const plans = await listPublicPlans();
+    if (plans.length > 0) return plans;
+  } catch (error) {
+    console.error("Falling back to static pricing config", error);
+  }
+  return rescuePlans;
+}
 
 export const metadata: Metadata = {
   title: "Revenue Rescue™ — Turn Old Leads Into Booked Jobs",
@@ -35,7 +52,8 @@ const faqs = [
   { q: "How do I start?", a: "With a Revenue Rescue Sprint: a one-time cleanup, analysis, and reactivation pass on your existing lead database. Book a call and we'll scope it against your data." },
 ];
 
-export default function RevenueRescuePage() {
+export default async function RevenueRescuePage() {
+  const pricingPlans = await loadPricingPlans();
   return <>
     {/* Hero */}
     <section className="noise grid-lines overflow-hidden border-b border-white/10">
@@ -134,7 +152,7 @@ export default function RevenueRescuePage() {
         <p className="max-w-md text-sm leading-6 text-white/50">Every plan starts with your existing lead database — not with buying more traffic. Starting prices shown; final pricing is scoped to your data.</p>
       </div>
       <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        {rescuePlans.map(plan => <article key={plan.id} className={`flex flex-col rounded-3xl border p-7 ${plan.featured ? "border-forge-lime/50 bg-forge-lime/[.06]" : "border-white/10 bg-white/[.03]"}`}>
+        {pricingPlans.map(plan => <article key={plan.id} className={`flex flex-col rounded-3xl border p-7 ${plan.featured ? "border-forge-lime/50 bg-forge-lime/[.06]" : "border-white/10 bg-white/[.03]"}`}>
           {plan.featured && <span className="mb-4 inline-flex w-fit items-center gap-1 rounded-full bg-forge-lime px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-forge-ink"><Sparkles size={12} /> Most popular</span>}
           {plan.cadence === "one-time" && <span className="mb-4 inline-flex w-fit rounded-full border border-forge-rust/40 bg-forge-rust/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-forge-rust">Start here</span>}
           <h3 className="text-lg font-extrabold">{plan.name}</h3>

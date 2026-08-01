@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { parseEmbedBranding, type EmbedBranding } from "./embed-branding";
 
 type EmbedLead = {
   id: string;
@@ -25,6 +26,7 @@ export function EmbedLeads() {
   const token = searchParams.get("token") ?? "";
   const [leads, setLeads] = useState<EmbedLead[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [branding, setBranding] = useState<EmbedBranding | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -41,6 +43,7 @@ export function EmbedLeads() {
       }
       setLeads(body.data ?? []);
       setTotal(typeof body.total === "number" ? body.total : (body.data ?? []).length);
+      setBranding(parseEmbedBranding(body));
       setError("");
     } catch {
       setError("Could not load leads.");
@@ -68,8 +71,10 @@ export function EmbedLeads() {
   return (
     <div className="space-y-4 p-5 text-white">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-bold">Recent leads</h1>
-        <span className="text-[10px] uppercase tracking-wider text-white/40">Powered by MogulForge</span>
+        <h1 className="text-lg font-bold">{branding?.displayName ? `${branding.displayName} — Recent leads` : "Recent leads"}</h1>
+        {(branding?.poweredBy.show ?? true) && (
+          <span className="text-[10px] uppercase tracking-wider text-white/40">{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
+        )}
       </div>
       {leads.length === 0 ? (
         <div className={`${box} text-sm text-white/50`}>No leads yet.</div>

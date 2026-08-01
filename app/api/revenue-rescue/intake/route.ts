@@ -8,6 +8,7 @@ import { autoMapColumns, mappingHasContactField } from "@/lib/rescue-import/mapp
 import { isLeadFieldKey, type LeadFieldKey } from "@/lib/rescue-import/fields";
 import { createLeadImport } from "@/lib/rescue-import/store";
 import { startImportPipeline } from "@/lib/rescue-import/pipeline";
+import { requireActionCapacity } from "@/lib/usage";
 import { logAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
@@ -75,9 +76,15 @@ export const POST = guard(async (request: Request) => {
   // Importing a file is gated the same way as the org-scoped import routes:
   // a write-capable role plus the lead_import module. A freshly created
   // self-serve org always passes (owner role + starter entitlements).
-  if (upload) {
+  if (upload && parsedUpload) {
     await requireMember(organizationId, IMPORT_WRITE_ROLES);
     await requireEntitlement(organizationId, "lead_import");
+    // Usage gate: intake-wizard imports count against the same plan limits as
+    // the org-scoped import routes — this path must not bypass metering.
+    await requireActionCapacity(organizationId, {
+      leads_imported: parsedUpload.rows.length,
+      leads_stored: parsedUpload.rows.length,
+    });
   }
 
   const intakeId = await recordIntake(organizationId, user.id, intake);

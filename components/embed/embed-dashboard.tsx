@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { accentBg, parseEmbedBranding, type EmbedBranding } from "./embed-branding";
 
 type Metrics = {
   cards: Record<string, number>;
@@ -21,6 +22,7 @@ export function EmbedDashboard() {
   const token = searchParams.get("token") ?? "";
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [orgName, setOrgName] = useState("");
+  const [branding, setBranding] = useState<EmbedBranding | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -37,6 +39,7 @@ export function EmbedDashboard() {
       }
       setMetrics(body.data);
       setOrgName(body.organization ?? "");
+      setBranding(parseEmbedBranding(body));
       setError("");
     } catch {
       setError("Could not load dashboard data.");
@@ -72,9 +75,17 @@ export function EmbedDashboard() {
 
   return (
     <div className="space-y-5 p-5 text-white">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-bold">{orgName ? `${orgName} — Revenue Rescue` : "Revenue Rescue"}</h1>
-        <span className="text-[10px] uppercase tracking-wider text-white/40">Powered by MogulForge</span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          {branding?.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- external client logo, unknown host
+            <img src={branding.logoUrl} alt="" className="h-6 w-auto" />
+          )}
+          <h1 className="text-lg font-bold">{orgName ? `${orgName} — Revenue Rescue` : "Revenue Rescue"}</h1>
+        </div>
+        {(branding?.poweredBy.show ?? true) && (
+          <span className="text-[10px] uppercase tracking-wider text-white/40">{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         {cards.map((card) => {
@@ -98,7 +109,7 @@ export function EmbedDashboard() {
                 <div key={step.stage} className="flex items-center gap-3 text-xs">
                   <span className="w-36 shrink-0 capitalize text-white/60">{step.stage.replace(/_/g, " ")}</span>
                   <div className="h-2 flex-1 rounded-full bg-white/5">
-                    <div className="h-2 rounded-full bg-forge-lime/70" style={{ width: `${Math.max(4, (step.count / max) * 100)}%` }} />
+                    <div className="h-2 rounded-full bg-forge-lime/70" style={{ width: `${Math.max(4, (step.count / max) * 100)}%`, ...accentBg(branding) }} />
                   </div>
                   <span className="w-10 text-right font-bold">{step.count}</span>
                 </div>

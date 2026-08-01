@@ -6,6 +6,7 @@ import { mappingHasContactField } from "@/lib/rescue-import/mapping";
 import { getLeadImport, saveFieldMapping } from "@/lib/rescue-import/store";
 import { startImportPipeline } from "@/lib/rescue-import/pipeline";
 import { logAudit } from "@/lib/audit";
+import { requireActionCapacity } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,10 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
   if (!mappingHasContactField(mapping)) {
     throw new ApiError(400, "Map at least one contact column — email or phone — so leads can be reached.");
   }
+
+  // Usage gate: re-checked at pipeline start too, since usage may have grown
+  // since the upload. (Suppression handling inside the pipeline is never gated.)
+  await requireActionCapacity(org.id, { leads_imported: record.rowCount ?? 0, leads_stored: record.rowCount ?? 0 });
 
   await saveFieldMapping(org.id, importId, mapping);
   const started = await startImportPipeline(org.id, importId, user.email);

@@ -8,6 +8,7 @@ export const FEATURE_KEYS = [
   "appointments",
   "analytics",
   "api_access",
+  "white_label",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -21,6 +22,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   appointments: "Appointments",
   analytics: "Analytics & Reporting",
   api_access: "Public API Access",
+  white_label: "Full White Label",
 };
 
 export function isFeatureKey(value: string): value is FeatureKey {

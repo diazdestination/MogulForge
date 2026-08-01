@@ -22,7 +22,16 @@ export type Organization = {
   brandSecondaryColor: string | null;
   logoUrl: string | null;
   allowedOrigins: string[];
-  usageLimits: Partial<UsageLimits>;
+  usageLimits: Partial<UsageLimits> & Record<string, number>;
+  brandingLevel: string;
+  displayName: string | null;
+  portalTitle: string | null;
+  loginTitle: string | null;
+  supportEmail: string | null;
+  supportPhone: string | null;
+  emailSenderName: string | null;
+  smsSenderName: string | null;
+  poweredByLabel: string | null;
   createdAt: string;
 };
 
@@ -67,6 +76,15 @@ function mapOrg(row: any): Organization {
     logoUrl: row.logo_url,
     allowedOrigins: row.allowed_origins ?? [],
     usageLimits: row.usage_limits ?? {},
+    brandingLevel: row.branding_level ?? "mogulforge",
+    displayName: row.display_name ?? null,
+    portalTitle: row.portal_title ?? null,
+    loginTitle: row.login_title ?? null,
+    supportEmail: row.support_email ?? null,
+    supportPhone: row.support_phone ?? null,
+    emailSenderName: row.email_sender_name ?? null,
+    smsSenderName: row.sms_sender_name ?? null,
+    poweredByLabel: row.powered_by_label ?? null,
     createdAt: row.created_at,
   };
 }
@@ -86,7 +104,7 @@ export async function listOrganizations(): Promise<(Organization & { memberCount
 
 export async function updateOrganization(
   organizationId: string,
-  patch: Partial<Pick<Organization, "name" | "industry" | "timezone" | "plan" | "status" | "brandPrimaryColor" | "brandSecondaryColor" | "logoUrl" | "allowedOrigins" | "usageLimits">>,
+  patch: Partial<Pick<Organization, "name" | "industry" | "timezone" | "plan" | "status" | "brandPrimaryColor" | "brandSecondaryColor" | "logoUrl" | "allowedOrigins" | "usageLimits" | "brandingLevel" | "displayName" | "portalTitle" | "loginTitle" | "supportEmail" | "supportPhone" | "emailSenderName" | "smsSenderName" | "poweredByLabel">>,
 ): Promise<Organization | null> {
   const columns: Record<string, unknown> = {};
   if (patch.name !== undefined) columns.name = patch.name;
@@ -99,6 +117,15 @@ export async function updateOrganization(
   if (patch.logoUrl !== undefined) columns.logo_url = patch.logoUrl;
   if (patch.allowedOrigins !== undefined) columns.allowed_origins = patch.allowedOrigins;
   if (patch.usageLimits !== undefined) columns.usage_limits = JSON.stringify(patch.usageLimits);
+  if (patch.brandingLevel !== undefined) columns.branding_level = patch.brandingLevel;
+  if (patch.displayName !== undefined) columns.display_name = patch.displayName;
+  if (patch.portalTitle !== undefined) columns.portal_title = patch.portalTitle;
+  if (patch.loginTitle !== undefined) columns.login_title = patch.loginTitle;
+  if (patch.supportEmail !== undefined) columns.support_email = patch.supportEmail;
+  if (patch.supportPhone !== undefined) columns.support_phone = patch.supportPhone;
+  if (patch.emailSenderName !== undefined) columns.email_sender_name = patch.emailSenderName;
+  if (patch.smsSenderName !== undefined) columns.sms_sender_name = patch.smsSenderName;
+  if (patch.poweredByLabel !== undefined) columns.powered_by_label = patch.poweredByLabel;
   const keys = Object.keys(columns);
   if (keys.length === 0) return getOrganizationById(organizationId);
   const sets = keys.map((key, i) => `${key} = $${i + 2}`).join(", ");

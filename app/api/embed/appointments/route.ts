@@ -1,4 +1,5 @@
 import { embedCorsHeaders, requireEmbedSession } from "@/lib/embed/auth";
+import { getEmbedBranding } from "@/lib/branding";
 import { guardV1 } from "@/lib/public-api/http";
 import { listAppointments } from "@/lib/rescue-engage/store";
 import { NextResponse } from "next/server";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 /** GET /api/embed/appointments — upcoming appointments for the embedded module. */
 export const GET = guardV1(async (request: Request) => {
   const { org, claims } = await requireEmbedSession(request, "appointments");
-  const appointments = await listAppointments(org.id, { limit: 50 });
+  const [appointments, branding] = await Promise.all([listAppointments(org.id, { limit: 50 }), getEmbedBranding(org)]);
   const data = appointments.map((a) => ({
     id: a.id,
     appointmentType: a.appointmentType,
@@ -18,7 +19,7 @@ export const GET = guardV1(async (request: Request) => {
     status: a.status,
     address: a.address,
   }));
-  return NextResponse.json({ data }, { headers: embedCorsHeaders(claims) });
+  return NextResponse.json({ data, branding }, { headers: embedCorsHeaders(claims) });
 });
 
 export function OPTIONS(request: Request) {

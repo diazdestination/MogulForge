@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { ApiError, guard, readJson, requireEntitlement, requireMember } from "@/lib/api-guard";
 import { ActivationError, activateCampaign } from "@/lib/rescue-engage/send-engine";
+import { computeAudience } from "@/lib/rescue-engage/eligibility";
 import { getCampaign } from "@/lib/rescue-engage/store";
 import { CAMPAIGN_MANAGE_ROLES } from "@/lib/roles";
+import { recordUsageInBackground, requireActionCapacity } from "@/lib/usage";
+import { resolveOrgBranding } from "@/lib/branding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +25,19 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
   if (!campaign) throw new ApiError(404, "Campaign not found.");
   await requireEntitlement(org.id, campaign.channel === "sms" ? "sms_campaigns" : "email_campaigns");
 
+  // Usage gate: campaign sends count against the channel's plan limit
+  // (simulated sends are metered too). The gate is quantity-aware — it checks
+  // capacity for the campaign's full projected audience, so a single
+  // activation can never blow past the plan limit. Opt-out/suppression
+  // handling inside the send engine always runs — it is never routed through
+  // this gate.
+  const sendMetric = campaign.channel === "sms" ? "sms_sent" : "emails_sent";
+  const projected = await computeAudience(org.id, campaign.id, campaign.channel, campaign.audience);
+  await requireActionCapacity(org.id, projected.accounting.eligible > 0 ? { [sendMetric]: projected.accounting.eligible } : {});
+
+  // White-label branding: sends go out under the org's configured sender name.
+  const branding = await resolveOrgBranding(org);
+
   const body = (await readJson(request)) as { mode?: string; confirm?: boolean };
   const mode = body.mode === "live" ? "live" : "simulation";
   try {
@@ -30,9 +46,10 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
       campaignId,
       requestedMode: mode,
       confirmed: body.confirm === true,
-      orgName: org.name,
+      orgName: campaign.channel === "sms" ? branding.smsSenderName : branding.emailSenderName,
       actorUserId: user.id,
     });
+    if (result.simulatedSends > 0) recordUsageInBackground(org.id, sendMetric, result.simulatedSends);
     return NextResponse.json({
       campaign: result.campaign,
       enrolled: result.enrolled,

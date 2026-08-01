@@ -5,6 +5,8 @@ import { touchApiKey, verifyApiKey } from "./keys";
 import { getPublicApiRateLimiter } from "./rate-limit";
 import { PublicApiError } from "./http";
 import type { ApiScope } from "./scopes";
+import { ApiError } from "../api-guard";
+import { recordUsageInBackground, requireActionCapacity } from "../usage";
 
 export type PublicApiContext = {
   org: Organization;
@@ -65,7 +67,22 @@ export async function requireApiKey(request: Request, scope: ApiScope): Promise<
     });
   }
 
+  // Plan gate: suspended/cancelled accounts and exhausted api_requests limits
+  // block API usage (this request itself counts as 1).
+  try {
+    await requireActionCapacity(org.id, { api_requests: 1 });
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "usage_limit_reached") {
+      throw new PublicApiError(429, "usage_limit_reached", error.message);
+    }
+    if (error instanceof ApiError && error.code === "account_blocked") {
+      throw new PublicApiError(403, "account_blocked", error.message);
+    }
+    throw error;
+  }
+
   touchApiKey(verified.keyId);
   bumpUsage(org.id);
+  recordUsageInBackground(org.id, "api_requests", 1);
   return { org, keyId: verified.keyId, scopes: verified.scopes, rateHeaders };
 }

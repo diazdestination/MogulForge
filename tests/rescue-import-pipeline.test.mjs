@@ -113,7 +113,9 @@ before(async () => {
       slug: `test-${RUN}-b`,
       plan: "starter",
       modules: ["revenue_rescue", "lead_import"],
-      usageLimits: { seats: 2 },
+      // High import capacity: this org bulk-imports 12k rows to test pipeline
+      // concurrency, which must not trip the (separately tested) usage limits.
+      usageLimits: { seats: 2, leads_imported: 100000, leads_stored: 100000 },
       allowedOrigins: [],
       owner: { email: `outsider-${RUN}@rescue-test.local`, name: "Outsider" },
     },

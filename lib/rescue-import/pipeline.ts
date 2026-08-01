@@ -20,6 +20,7 @@ import {
 } from "./store.ts";
 import { logAudit } from "../audit";
 import { getEntitlement } from "../tenant";
+import { recordUsageInBackground } from "../usage";
 import { startAnalysisRun } from "../rescue-analysis/engine.ts";
 
 /**
@@ -229,6 +230,7 @@ async function processClaimedImport(organizationId: string, importId: string, ac
     await setImportStage(organizationId, importId, "importing", `Storing ${toInsert.length.toLocaleString()} leads.`, { suppressedCount });
     const importedCount = await insertLeads(organizationId, toInsert);
     if (rejected.length > 0) await insertRejectedRows(organizationId, importId, rejected);
+    if (importedCount > 0) recordUsageInBackground(organizationId, "leads_imported", importedCount);
 
     // Nothing imported is never "complete": all-invalid → failed, otherwise
     // (all duplicates / mix) → partial, so the dashboard makes the outcome clear.
@@ -283,6 +285,8 @@ async function processClaimedImport(organizationId: string, importId: string, ac
             await appendImportLogEntry(organizationId, importId, "analyzing", `Analyzing ${result.run.totalCount.toLocaleString()} imported lead(s) — scores and categories will appear as the run progresses.`);
           } else if (result.reason === "run_in_progress") {
             await appendImportLogEntry(organizationId, importId, "analyzing", "Another analysis run is in progress; these leads will be picked up by the next run.");
+          } else if (result.reason === "usage_blocked") {
+            await appendImportLogEntry(organizationId, importId, "analyzing", `Automatic analysis skipped: ${result.message}`);
           }
         }
       } catch (analysisError) {

@@ -5,6 +5,8 @@ import { intakeLead, parseLeadIntake } from "@/lib/public-api/lead-intake";
 import { listLeads, LEAD_SORT_KEYS, type LeadSortKey } from "@/lib/rescue-analysis/store";
 import { isPipelineStage } from "@/lib/rescue-engage/pipeline";
 import { emitOrgEventInBackground } from "@/lib/webhooks/outgoing";
+import { ApiError } from "@/lib/api-guard";
+import { recordUsageInBackground, requireActionCapacity } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +53,13 @@ export const POST = guardV1(async (request: Request) => {
   const ctx = await requireApiKey(request, "leads:write");
   const body = await readV1Json(request);
   return withIdempotency(ctx.org.id, "POST /v1/leads", request, body, async () => {
+    // Usage gate: lead creation counts against import/stored-lead limits.
+    try {
+      await requireActionCapacity(ctx.org.id, { leads_imported: 1, leads_stored: 1 });
+    } catch (error) {
+      if (error instanceof ApiError) throw new PublicApiError(403, error.code ?? "usage_limit_reached", error.message);
+      throw error;
+    }
     const parsed = parseLeadIntake(body);
     if (!parsed.input) throw new PublicApiError(422, "invalid_lead", parsed.message ?? "Invalid lead payload.");
     const result = await intakeLead(ctx.org.id, parsed.input);
@@ -61,6 +70,7 @@ export const POST = guardV1(async (request: Request) => {
       });
     }
     emitOrgEventInBackground(ctx.org.id, "lead.created", { lead_id: result.leadId, source: "public_api" });
+    recordUsageInBackground(ctx.org.id, "leads_imported", 1);
     return { status: 201, body: { data: { id: result.leadId, suppressed: result.suppressed } }, headers: ctx.rateHeaders };
   });
 });

@@ -5,6 +5,8 @@ import { getLeadDetail, insertMessageDraft, listMessageDrafts } from "@/lib/resc
 import { generateMessageDraft, SuppressedLeadError } from "@/lib/rescue-analysis/messages";
 import { messageRequestSchema } from "@/lib/rescue-analysis/message-content";
 import { logAudit } from "@/lib/audit";
+import { recordUsageInBackground, requireActionCapacity } from "@/lib/usage";
+import { resolveOrgBranding } from "@/lib/branding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,16 +42,24 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
     throw new ApiError(400, `Invalid request: ${first?.path.join(".") || "body"} ${first?.message ?? ""}`.trim());
   }
 
+  // Usage gate: message generation is a gated action (suppressed leads are
+  // refused by the generator regardless — that refusal is not a usage gate).
+  await requireActionCapacity(org.id, { messages_generated: 1 });
+
   const lead = await getLeadDetail(org.id, leadId);
   if (!lead) throw new ApiError(404, "Lead not found.");
 
+  // White-label branding: drafts are written under the org's sender name.
+  const branding = await resolveOrgBranding(org);
+
   let generated;
   try {
-    generated = await generateMessageDraft(lead, parsed.data, org.name);
+    generated = await generateMessageDraft(lead, parsed.data, parsed.data.type === "sms" ? branding.smsSenderName : branding.emailSenderName);
   } catch (error) {
     if (error instanceof SuppressedLeadError) throw new ApiError(403, error.message, "lead_suppressed");
     throw error;
   }
+  recordUsageInBackground(org.id, "messages_generated", 1);
 
   const draft = await insertMessageDraft({
     organizationId: org.id,

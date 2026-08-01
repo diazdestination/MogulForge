@@ -4,6 +4,7 @@ import { getCurrentUser, type SessionUser } from "./auth";
 import { getEntitlement } from "./tenant";
 import type { FeatureKey } from "./entitlements";
 import type { OrgRole } from "./roles";
+import { recordActiveUserInBackground } from "./usage";
 
 /**
  * Shared org resolution for dashboard pages. The ?org= param is only honored
@@ -32,5 +33,6 @@ export async function getDashboardContext(orgParam: string | undefined, feature:
   const active = memberships.find((m) => m.id === orgParam) ?? memberships[0];
   const entitlement = await getEntitlement(active.id, feature);
   if (!entitlement?.enabled) return { kind: "no_entitlement", user, active, memberships, feature };
+  recordActiveUserInBackground(active.id, user.id); // usage metering: distinct active users per period
   return { kind: "ok", user, active, memberships, role: active.role };
 }

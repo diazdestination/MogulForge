@@ -75,6 +75,14 @@ export async function provisionOrganization(input: ProvisionInput, actor: { user
       );
     }
 
+    // Subscription row so the org has a plan/state from day one. The seeded
+    // plan_definitions include every legacy Plan id, so this FK always resolves.
+    await client.query(
+      `INSERT INTO org_subscriptions (organization_id, plan_id, status, billing_provider)
+       VALUES ($1, $2, 'active', 'manual') ON CONFLICT (organization_id) DO NOTHING`,
+      [organizationId, input.plan],
+    );
+
     const inviteToken = randomBytes(24).toString("base64url");
     await client.query(
       `INSERT INTO org_invites (token, organization_id, email, name, role, expires_at)

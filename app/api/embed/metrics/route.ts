@@ -1,4 +1,5 @@
 import { embedCorsHeaders, requireEmbedSession } from "@/lib/embed/auth";
+import { getEmbedBranding } from "@/lib/branding";
 import { guardV1 } from "@/lib/public-api/http";
 import { getOverviewMetrics } from "@/lib/rescue-engage/metrics";
 import { NextResponse } from "next/server";
@@ -9,8 +10,8 @@ export const dynamic = "force-dynamic";
 /** GET /api/embed/metrics — overview metrics for the embedded dashboard module. */
 export const GET = guardV1(async (request: Request) => {
   const { org, claims } = await requireEmbedSession(request, "dashboard");
-  const metrics = await getOverviewMetrics(org.id, {});
-  return NextResponse.json({ data: metrics, organization: org.name }, { headers: embedCorsHeaders(claims) });
+  const [metrics, branding] = await Promise.all([getOverviewMetrics(org.id, {}), getEmbedBranding(org)]);
+  return NextResponse.json({ data: metrics, organization: branding.displayName, branding }, { headers: embedCorsHeaders(claims) });
 });
 
 export function OPTIONS(request: Request) {

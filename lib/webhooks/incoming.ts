@@ -5,6 +5,7 @@ import { intakeLead, parseLeadIntake, normalizeEmail, normalizePhone } from "../
 import { suppressLeadContact, setLeadStage, logActivity } from "../rescue-engage/store";
 import { emitOrgEventInBackground } from "./outgoing";
 import { recordSyncConflict } from "../crm/store";
+import { checkActionCapacity, recordUsageInBackground } from "../usage";
 
 /**
  * Incoming webhooks: org-specific signed endpoints. Events are stored first
@@ -175,6 +176,10 @@ async function processEvent(endpoint: IncomingEndpoint, eventType: IncomingEvent
   if (eventType === "ping") return { status: "processed", result: "pong" };
 
   if (eventType === "lead.created") {
+    // Usage gate: creating leads is a gated action. (contact.opted_out below is
+    // deliberately NEVER gated — opt-outs are always honored.)
+    const capacity = await checkActionCapacity(organizationId, { leads_stored: 1, leads_imported: 1 });
+    if (!capacity.allowed) return { status: "failed", error: capacity.reason ?? "Usage limit reached." };
     const parsed = parseLeadIntake(data);
     if (!parsed.input) return { status: "failed", error: parsed.message ?? "Invalid lead payload." };
     const result = await intakeLead(organizationId, { ...parsed.input, source: parsed.input.source === "api" ? "webhook" : parsed.input.source });
@@ -188,6 +193,7 @@ async function processEvent(endpoint: IncomingEndpoint, eventType: IncomingEvent
       detail: `Endpoint: ${endpoint.name}`,
     });
     emitOrgEventInBackground(organizationId, "lead.created", { lead_id: result.leadId, source: "incoming_webhook" });
+    recordUsageInBackground(organizationId, "leads_imported", 1);
     return { status: "processed", result: `Created lead ${result.leadId}${result.suppressed ? " (suppressed on arrival)" : ""}.` };
   }
 
@@ -313,6 +319,7 @@ export async function ingestIncomingEvent(
   }
   const rowId = String(inserted.rows[0].id);
   await pool.query(`UPDATE incoming_webhook_endpoints SET last_event_at = now() WHERE id = $1`, [endpoint.id]);
+  recordUsageInBackground(endpoint.organizationId, "webhook_events", 1);
 
   let outcome: ProcessOutcome;
   try {

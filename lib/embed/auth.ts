@@ -13,7 +13,7 @@ export type EmbedContext = {
  * module claim → Origin header must match the token's origin claim, which must
  * still be on the org's allow-list (revocable at any time).
  */
-export async function requireEmbedSession(request: Request, module: EmbedModule): Promise<EmbedContext> {
+export async function requireEmbedSession(request: Request, module: EmbedModule | null): Promise<EmbedContext> {
   const header = request.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   if (!match) throw new PublicApiError(401, "missing_embed_token", "Provide an embed session token via the Authorization: Bearer header.");
@@ -24,7 +24,8 @@ export async function requireEmbedSession(request: Request, module: EmbedModule)
     throw new PublicApiError(401, `embed_token_${check.reason}`, message);
   }
   const claims = check.claims;
-  if (!claims.modules.includes(module)) {
+  // module === null accepts any valid session (used for module-agnostic data like branding).
+  if (module !== null && !claims.modules.includes(module)) {
     throw new PublicApiError(403, "embed_module_not_allowed", `This embed session does not include the ${module} module.`);
   }
 

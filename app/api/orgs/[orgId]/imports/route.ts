@@ -5,6 +5,7 @@ import { parseUploadedFile, UploadParseError } from "@/lib/rescue-import/parse-u
 import { autoMapColumns } from "@/lib/rescue-import/mapping";
 import { createLeadImport, listLeadImports } from "@/lib/rescue-import/store";
 import { logAudit } from "@/lib/audit";
+import { requireActionCapacity } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,10 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
     if (error instanceof UploadParseError) throw new ApiError(400, error.message);
     throw error;
   }
+
+  // Usage gate: importing this many rows must fit within the plan's import and
+  // stored-lead limits. (Suppression/opt-out processing is never gated.)
+  await requireActionCapacity(org.id, { leads_imported: parsed.rows.length, leads_stored: parsed.rows.length });
 
   const autoMapping = autoMapColumns(parsed.headers, parsed.rows.slice(0, 25));
   const record = await createLeadImport({

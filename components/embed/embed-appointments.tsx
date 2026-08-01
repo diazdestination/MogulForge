@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { parseEmbedBranding, type EmbedBranding } from "./embed-branding";
 
 type EmbedAppointment = {
   id: string;
@@ -30,6 +31,7 @@ export function EmbedAppointments() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
   const [appointments, setAppointments] = useState<EmbedAppointment[] | null>(null);
+  const [branding, setBranding] = useState<EmbedBranding | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -45,6 +47,7 @@ export function EmbedAppointments() {
         return;
       }
       setAppointments(body.data ?? []);
+      setBranding(parseEmbedBranding(body));
       setError("");
     } catch {
       setError("Could not load appointments.");
@@ -72,8 +75,10 @@ export function EmbedAppointments() {
   return (
     <div className="space-y-4 p-5 text-white">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-bold">Appointments</h1>
-        <span className="text-[10px] uppercase tracking-wider text-white/40">Powered by MogulForge</span>
+        <h1 className="text-lg font-bold">{branding?.displayName ? `${branding.displayName} — Appointments` : "Appointments"}</h1>
+        {(branding?.poweredBy.show ?? true) && (
+          <span className="text-[10px] uppercase tracking-wider text-white/40">{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
+        )}
       </div>
       {appointments.length === 0 ? (
         <div className={`${box} text-sm text-white/50`}>No appointments scheduled.</div>

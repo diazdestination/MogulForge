@@ -1,6 +1,7 @@
 import "server-only";
 import { getOpenAIClient } from "../openai";
 import { logAudit } from "../audit";
+import { checkActionCapacity, recordUsageInBackground } from "../usage";
 import { analyzeDeterministic, type DeterministicAnalysis } from "./signals.ts";
 import { AI_ANALYSIS_JSON_SPEC, parseAiAnalysis, type AiAnalysis } from "./ai-schema.ts";
 import { mergeAnalysis } from "./merge.ts";
@@ -135,6 +136,7 @@ async function processRun(run: AnalysisRun, leads: LeadForAnalysis[], actorLabel
       await updateRunProgress(organizationId, run.id, { analyzedCount: analyzed, aiCount, failedCount: failed });
     }
 
+    if (analyzed > 0) recordUsageInBackground(organizationId, "leads_analyzed", analyzed);
     const status = failed === 0 ? "complete" : analyzed === 0 ? "failed" : "partial";
     await updateRunProgress(organizationId, run.id, {
       status,
@@ -174,7 +176,8 @@ async function processRun(run: AnalysisRun, leads: LeadForAnalysis[], actorLabel
 export type StartRunResult =
   | { started: true; run: AnalysisRun }
   | { started: false; reason: "run_in_progress"; activeRun: AnalysisRun | null }
-  | { started: false; reason: "no_leads" };
+  | { started: false; reason: "no_leads" }
+  | { started: false; reason: "usage_blocked"; message: string };
 
 /**
  * Starts a background analysis run over the org's pending/failed leads
@@ -192,6 +195,13 @@ export async function startAnalysisRun(
   organizationId: string,
   opts: { importId?: string | null; createdBy?: string | null; actorLabel: string },
 ): Promise<StartRunResult> {
+  // Usage gate enforced here — the shared entry point — so every caller
+  // (manual API route AND the post-import auto-start) is covered.
+  const capacity = await checkActionCapacity(organizationId, { ai_jobs: 1 });
+  if (!capacity.allowed) {
+    return { started: false, reason: "usage_blocked", message: capacity.reason ?? "AI analysis limit reached for this plan." };
+  }
+
   // Recover from any interrupted previous run before trying to start.
   await reapStaleRuns(organizationId);
   await reclaimStrandedLeads(organizationId);
@@ -216,6 +226,7 @@ export async function startAnalysisRun(
   }
   await updateRunProgress(organizationId, run.id, { totalCount: leads.length });
   run.totalCount = leads.length;
+  recordUsageInBackground(organizationId, "ai_jobs", 1);
 
   void processRun(run, leads, opts.actorLabel).catch((error) => {
     console.error("Unhandled analysis run error", run.id, error);
