@@ -1,8 +1,26 @@
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // hourly check; digest itself sends at most weekly
+const WEBHOOK_RETRY_INTERVAL_MS = 60 * 1000; // outgoing webhook retries are due-time based
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const globalState = globalThis as typeof globalThis & { __leadDigestTimer?: ReturnType<typeof setInterval> };
+  const globalState = globalThis as typeof globalThis & {
+    __leadDigestTimer?: ReturnType<typeof setInterval>;
+    __webhookRetryTimer?: ReturnType<typeof setInterval>;
+  };
+
+  if (!globalState.__webhookRetryTimer) {
+    const retryTick = async () => {
+      try {
+        const { processDueDeliveries } = await import("./lib/webhooks/outgoing");
+        await processDueDeliveries();
+      } catch (error) {
+        console.error("Outgoing webhook retry pass failed", error);
+      }
+    };
+    globalState.__webhookRetryTimer = setInterval(retryTick, WEBHOOK_RETRY_INTERVAL_MS);
+    globalState.__webhookRetryTimer.unref?.();
+  }
+
   if (globalState.__leadDigestTimer) return;
 
   const tick = async () => {

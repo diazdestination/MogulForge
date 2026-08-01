@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/dashboard/revenue-rescue/conversations", label: "Conversations" },
   { href: "/dashboard/revenue-rescue/appointments", label: "Appointments" },
   { href: "/dashboard/revenue-rescue/imports", label: "Imports" },
+  { href: "/dashboard/revenue-rescue/integrations", label: "Integrations" },
 ];
 
 /** Dashboard sub-navigation. Preserves the active ?org= selection across pages. */
