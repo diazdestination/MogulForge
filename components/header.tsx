@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
-const links = [{ href: "/#rescue", label: "Revenue Rescue" }, { href: "/#score", label: "MogulScore" }, { href: "/services", label: "Services" }, { href: "/about", label: "Why MogulForge" }];
+const links = [{ href: "/#rescue", label: "Revenue Rescue" }, { href: "/ai-visibility", label: "AI Visibility" }, { href: "/#score", label: "MogulScore" }, { href: "/services", label: "Services" }, { href: "/about", label: "Why MogulForge" }];
 
 export function Header() {
   const [open, setOpen] = useState(false);

@@ -15,3 +15,13 @@ body { margin: 0; background: var(--ink); color: var(--cream); }
 .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-forge-lime px-6 py-3.5 text-sm font-extrabold text-forge-ink transition hover:-translate-y-0.5 hover:bg-white focus:outline-none focus:ring-2 focus:ring-forge-lime focus:ring-offset-2 focus:ring-offset-forge-ink; }
 .btn-secondary { @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/20 px-6 py-3.5 text-sm font-bold transition hover:border-forge-lime hover:text-forge-lime; }
 
+@media print {
+  body { background: #fff; color: #111; }
+  header, footer, .noise::after { display: none !important; }
+  .eyebrow { color: #4d7a00; }
+  .text-forge-lime, .text-white\/65, .text-white\/50, .text-white\/40, .text-white\/35, .text-white\/30 { color: #111 !important; }
+  .font-display.text-forge-lime, span.text-forge-lime { color: #4d7a00 !important; }
+  .border-white\/10, .border-forge-lime\/30 { border-color: #ddd !important; }
+  .bg-white\/\[\.04\], .bg-white\/\[\.03\], .bg-white\/\[\.02\] { background: #fff !important; }
+}
+

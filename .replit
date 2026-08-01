@@ -1,4 +1,4 @@
-modules = ["nodejs-22"]
+modules = ["nodejs-22", "postgresql-16"]
 
 [workflows]
 runButton = "Project"
@@ -32,3 +32,6 @@ externalPort = 80
 deploymentTarget = "autoscale"
 run = ["npx", "next", "start", "-H", "0.0.0.0", "-p", "5000"]
 build = ["npm", "run", "build"]
+
+[nix]
+channel = "stable-25_05"
