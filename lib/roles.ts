@@ -24,6 +24,21 @@ export const IMPORT_WRITE_ROLES: OrgRole[] = ["owner", "admin", "sales_manager",
 /** Roles allowed to generate message drafts (everyone who works leads; not read-only analysts). */
 export const MESSAGE_WRITE_ROLES: OrgRole[] = ["owner", "admin", "sales_manager", "sales_rep", "office_staff"];
 
+/** Roles allowed to create/edit campaigns and confirm activation (spec: owner/admin manage, sales manager approves). */
+export const CAMPAIGN_MANAGE_ROLES: OrgRole[] = ["owner", "admin", "sales_manager"];
+
+/** Roles allowed to act on leads: assign, change pipeline stage, suppress, note. */
+export const LEAD_ACTION_ROLES: OrgRole[] = ["owner", "admin", "sales_manager", "sales_rep", "office_staff"];
+
+/** Roles allowed to book/manage appointments. */
+export const APPOINTMENT_WRITE_ROLES: OrgRole[] = ["owner", "admin", "sales_manager", "sales_rep", "office_staff"];
+
+/** Roles allowed to log conversation messages (inbound replies, outbound notes/sends). */
+export const CONVERSATION_WRITE_ROLES: OrgRole[] = ["owner", "admin", "sales_manager", "sales_rep", "office_staff"];
+
+/** Roles that only ever see leads assigned to them (enforced server-side in queries). */
+export const ASSIGNED_ONLY_ROLES: OrgRole[] = ["sales_rep"];
+
 /** Platform-level roles (users.platform_role) for MogulForge staff. */
 export const PLATFORM_ROLES = ["platform_admin", "support_admin"] as const;
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];

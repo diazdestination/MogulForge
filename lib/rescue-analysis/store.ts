@@ -185,7 +185,7 @@ export async function updateRunProgress(
 
 export type LeadForAnalysis = { id: string } & LeadFacts;
 
-const LEAD_FACT_COLUMNS = `id, first_name, last_name, email, email_normalized, phone, phone_normalized,
+export const LEAD_FACT_COLUMNS = `id, first_name, last_name, email, email_normalized, phone, phone_normalized,
   address, city, state, zip, project_type, project_description, estimated_value, source, source_detail,
   first_contact_date::text AS first_contact_date, last_contact_date::text AS last_contact_date,
   estimate_date::text AS estimate_date, consent_status, suppressed, suppression_reason, status, notes`;
@@ -308,6 +308,21 @@ export type LeadListItem = {
   needsReview: boolean;
   analyzedAt: string | null;
   createdAt: string;
+  pipelineStage: string;
+  assignedUserId: string | null;
+  assignedName: string | null;
+  lastContactDate: string | null;
+};
+
+export const LEAD_SORT_KEYS = ["score", "created", "value", "last_contact", "name"] as const;
+export type LeadSortKey = (typeof LEAD_SORT_KEYS)[number];
+
+const SORT_SQL: Record<LeadSortKey, string> = {
+  score: "l.score",
+  created: "l.created_at",
+  value: "l.estimated_value",
+  last_contact: "l.last_contact_date",
+  name: "lower(coalesce(l.last_name, '') || coalesce(l.first_name, ''))",
 };
 
 export async function listLeads(
@@ -317,39 +332,107 @@ export async function listLeads(
     category?: string;
     analysisStatus?: string;
     needsReview?: boolean;
+    search?: string;
+    source?: string;
+    projectType?: string;
+    minScore?: number;
+    stage?: string;
+    campaignId?: string;
+    /** 'none' = unassigned; a user id = assigned to that user. */
+    assignedTo?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    suppressed?: boolean;
+    /** Hard restriction for sales reps — forced server-side, combines with assignedTo. */
+    restrictToUserId?: string;
+    sort?: LeadSortKey;
+    dir?: "asc" | "desc";
     limit?: number;
     offset?: number;
   } = {},
 ): Promise<{ leads: LeadListItem[]; total: number }> {
   const params: unknown[] = [organizationId];
-  const where: string[] = ["organization_id = $1"];
+  const where: string[] = ["l.organization_id = $1"];
   if (opts.importId) {
     params.push(opts.importId);
-    where.push(`import_id = $${params.length}`);
+    where.push(`l.import_id = $${params.length}`);
   }
   if (opts.category) {
     params.push(opts.category);
-    where.push(`category = $${params.length}`);
+    where.push(`l.category = $${params.length}`);
   }
   if (opts.analysisStatus) {
     params.push(opts.analysisStatus);
-    where.push(`analysis_status = $${params.length}`);
+    where.push(`l.analysis_status = $${params.length}`);
   }
   if (opts.needsReview !== undefined) {
     params.push(opts.needsReview);
-    where.push(`needs_review = $${params.length}`);
+    where.push(`l.needs_review = $${params.length}`);
+  }
+  if (opts.search && opts.search.trim() !== "") {
+    params.push(`%${opts.search.trim()}%`);
+    const p = `$${params.length}`;
+    where.push(`(coalesce(l.first_name, '') || ' ' || coalesce(l.last_name, '') ILIKE ${p} OR l.email ILIKE ${p} OR l.phone ILIKE ${p} OR l.address ILIKE ${p})`);
+  }
+  if (opts.source) {
+    params.push(opts.source.toLowerCase());
+    where.push(`lower(coalesce(l.source, '')) = $${params.length}`);
+  }
+  if (opts.projectType) {
+    params.push(opts.projectType.toLowerCase());
+    where.push(`lower(coalesce(l.project_type, '')) = $${params.length}`);
+  }
+  if (opts.minScore != null) {
+    params.push(opts.minScore);
+    where.push(`l.score >= $${params.length}`);
+  }
+  if (opts.stage) {
+    params.push(opts.stage);
+    where.push(`l.pipeline_stage = $${params.length}`);
+  }
+  if (opts.campaignId) {
+    params.push(opts.campaignId);
+    where.push(`EXISTS (SELECT 1 FROM rescue_campaign_leads cl WHERE cl.organization_id = l.organization_id AND cl.lead_id = l.id AND cl.campaign_id = $${params.length})`);
+  }
+  if (opts.assignedTo === "none") {
+    where.push("l.assigned_user_id IS NULL");
+  } else if (opts.assignedTo) {
+    params.push(opts.assignedTo);
+    where.push(`l.assigned_user_id = $${params.length}`);
+  }
+  if (opts.restrictToUserId) {
+    params.push(opts.restrictToUserId);
+    where.push(`l.assigned_user_id = $${params.length}`);
+  }
+  if (opts.createdFrom) {
+    params.push(opts.createdFrom);
+    where.push(`l.created_at >= $${params.length}::timestamptz`);
+  }
+  if (opts.createdTo) {
+    params.push(opts.createdTo);
+    where.push(`l.created_at < ($${params.length + 1}::timestamptz + interval '1 day')`);
+    params.push(opts.createdTo);
+  }
+  if (opts.suppressed !== undefined) {
+    params.push(opts.suppressed);
+    where.push(`l.suppressed = $${params.length}`);
   }
   const whereSql = where.join(" AND ");
-  const countResult = await getPool().query(`SELECT count(*)::int AS total FROM rescue_leads WHERE ${whereSql}`, params);
+  const countResult = await getPool().query(`SELECT count(*)::int AS total FROM rescue_leads l WHERE ${whereSql}`, params);
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
+  const sortKey: LeadSortKey = opts.sort && (LEAD_SORT_KEYS as readonly string[]).includes(opts.sort) ? opts.sort : "score";
+  const dir = opts.dir === "asc" ? "ASC" : "DESC";
+  const nulls = dir === "DESC" ? "NULLS LAST" : "NULLS FIRST";
   params.push(limit, offset);
   const { rows } = await getPool().query(
-    `SELECT id, import_id, first_name, last_name, email, phone, city, state, project_type, estimated_value,
-       source, consent_status, suppressed, status, analysis_status, score, category, needs_review,
-       analyzed_at, created_at
-     FROM rescue_leads WHERE ${whereSql}
-     ORDER BY score DESC NULLS LAST, created_at DESC
+    `SELECT l.id, l.import_id, l.first_name, l.last_name, l.email, l.phone, l.city, l.state, l.project_type, l.estimated_value,
+       l.source, l.consent_status, l.suppressed, l.status, l.analysis_status, l.score, l.category, l.needs_review,
+       l.analyzed_at, l.created_at, l.pipeline_stage, l.assigned_user_id, l.last_contact_date::text AS last_contact_date,
+       u.name AS assigned_name
+     FROM rescue_leads l LEFT JOIN users u ON u.id = l.assigned_user_id
+     WHERE ${whereSql}
+     ORDER BY ${SORT_SQL[sortKey]} ${dir} ${nulls}, l.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
@@ -376,8 +459,24 @@ export async function listLeads(
       needsReview: row.needs_review,
       analyzedAt: row.analyzed_at,
       createdAt: row.created_at,
+      pipelineStage: row.pipeline_stage,
+      assignedUserId: row.assigned_user_id,
+      assignedName: row.assigned_name,
+      lastContactDate: row.last_contact_date,
     })),
   };
+}
+
+/** Distinct filter values for the leads UI (sources, project types). */
+export async function getLeadFilterOptions(organizationId: string): Promise<{ sources: string[]; projectTypes: string[] }> {
+  const { rows } = await getPool().query(
+    `SELECT
+       array_remove(array_agg(DISTINCT lower(source)) FILTER (WHERE source IS NOT NULL AND source <> ''), NULL) AS sources,
+       array_remove(array_agg(DISTINCT lower(project_type)) FILTER (WHERE project_type IS NOT NULL AND project_type <> ''), NULL) AS project_types
+     FROM rescue_leads WHERE organization_id = $1`,
+    [organizationId],
+  );
+  return { sources: rows[0]?.sources ?? [], projectTypes: rows[0]?.project_types ?? [] };
 }
 
 export type LeadDetail = LeadForAnalysis & {
@@ -391,12 +490,17 @@ export type LeadDetail = LeadForAnalysis & {
   analyzedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  pipelineStage: string;
+  stageChangedAt: string | null;
+  assignedUserId: string | null;
+  wonValue: number | null;
 };
 
 export async function getLeadDetail(organizationId: string, leadId: string): Promise<LeadDetail | null> {
   const { rows } = await getPool().query(
     `SELECT ${LEAD_FACT_COLUMNS}, import_id, analysis_status, score, category, needs_review,
-       analysis, analysis_error, analyzed_at, created_at, updated_at
+       analysis, analysis_error, analyzed_at, created_at, updated_at,
+       pipeline_stage, stage_changed_at, assigned_user_id, won_value
      FROM rescue_leads WHERE organization_id = $1 AND id = $2`,
     [organizationId, leadId],
   );
@@ -414,6 +518,10 @@ export async function getLeadDetail(organizationId: string, leadId: string): Pro
     analyzedAt: row.analyzed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    pipelineStage: row.pipeline_stage,
+    stageChangedAt: row.stage_changed_at,
+    assignedUserId: row.assigned_user_id,
+    wonValue: row.won_value != null ? Number(row.won_value) : null,
   };
 }
 
