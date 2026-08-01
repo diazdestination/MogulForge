@@ -1,2 +1,3 @@
 - [Source repo location](source-repo.md) — real code lives in diazdestination/MogulForge branch agent/build-mogulforge-website, NOT the originally imported diazadam/RoofStorm repo.
 - [Lint purity rule in server components](lint-server-component-purity.md) — react-hooks/purity errors on Date.now() in app/ pages; move time logic into lib helpers, and lint app/lib/components only.
+- [Resend email setup](resend-email.md) — digest sends from onboarding@resend.dev until domain verifies; autoscale means the in-app timer only fires while warm.

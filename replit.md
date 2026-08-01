@@ -29,6 +29,8 @@ Marketing website for MogulForge with an "AI Revenue Rescue" scan feature. Built
 ## Environment
 - `OPENAI_API_KEY` required for the Revenue Rescue scan API; `OPENAI_MODEL` optional.
 - `DATABASE_URL` (Postgres), `SESSION_SECRET` (cookie signing), `ADMIN_PASSWORD` (platform-admin password login).
+- Weekly lead digest: `RESEND_API_KEY` + `LEAD_DIGEST_TO` (recipient) required; `LEAD_DIGEST_FROM` optional (defaults to `onboarding@resend.dev` until the domain is verified in Resend); `CRON_SECRET` optional bearer token for triggering `POST /api/cron/lead-digest` externally. An hourly in-app check (`instrumentation.ts`) sends the digest at most once a week and only when there are new leads.
+
 
 ## User preferences
 (none recorded yet)
