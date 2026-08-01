@@ -9,9 +9,12 @@ const LINKS = [
   { href: "/dashboard/revenue-rescue/conversations", label: "Conversations" },
   { href: "/dashboard/revenue-rescue/appointments", label: "Appointments" },
   { href: "/dashboard/revenue-rescue/imports", label: "Imports" },
+  { href: "/dashboard/revenue-rescue/reports", label: "Reports" },
   { href: "/dashboard/revenue-rescue/integrations", label: "Integrations" },
   { href: "/dashboard/revenue-rescue/plan", label: "Plan & Usage" },
   { href: "/dashboard/revenue-rescue/branding", label: "Branding" },
+  { href: "/dashboard/revenue-rescue/team", label: "Team" },
+  { href: "/dashboard/revenue-rescue/settings", label: "Settings" },
 ];
 
 /** Dashboard sub-navigation. Preserves the active ?org= selection across pages. */

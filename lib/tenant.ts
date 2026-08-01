@@ -272,3 +272,14 @@ export function isInviteActive(invite: Pick<Invite, "acceptedAt" | "expiresAt">)
 export async function markInviteAccepted(inviteId: string) {
   await getPool().query("UPDATE org_invites SET accepted_at = now() WHERE id = $1", [inviteId]);
 }
+
+/** Revokes a pending invite. Accepted invites are history and cannot be revoked. */
+export async function revokeInvite(organizationId: string, inviteId: string): Promise<Invite | null> {
+  const { rows } = await getPool().query(
+    "DELETE FROM org_invites WHERE organization_id = $1 AND id = $2 AND accepted_at IS NULL RETURNING *",
+    [organizationId, inviteId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, token: row.token, email: row.email, name: row.name, role: row.role, expiresAt: row.expires_at, acceptedAt: row.accepted_at, createdAt: row.created_at };
+}
