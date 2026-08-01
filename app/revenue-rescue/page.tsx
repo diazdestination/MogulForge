@@ -48,7 +48,7 @@ export default function RevenueRescuePage() {
             <Link className="btn-primary" href="/contact">Start a Revenue Rescue Sprint <ArrowRight size={17} /></Link>
             <Link className="btn-secondary" href="/revenue-rescue/demo">Explore the Live Demo</Link>
           </div>
-          <p className="mt-6 text-sm text-white/40">Not sure where you’re leaking? <Link href="/revenue-rescue/scan" className="border-b border-forge-lime/50 font-bold text-forge-lime">Run the free 2-minute leak scan</Link></p>
+          <p className="mt-6 text-sm text-white/40">Not sure where you’re leaking? <Link href="/revenue-rescue/scan" className="border-b border-forge-lime/50 font-bold text-forge-lime">Run the free 2-minute leak scan</Link> · Already onboard? <Link href="/revenue-rescue/start" className="border-b border-forge-lime/50 font-bold text-forge-lime">Start your client intake</Link></p>
         </div>
 
         {/* Dashboard preview — example data */}

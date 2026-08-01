@@ -18,6 +18,9 @@ export function isOrgRole(value: string): value is OrgRole {
 /** Roles allowed to manage org settings, members, and invites. */
 export const MANAGER_ROLES: OrgRole[] = ["owner", "admin"];
 
+/** Roles allowed to upload lead files and run imports. */
+export const IMPORT_WRITE_ROLES: OrgRole[] = ["owner", "admin", "sales_manager", "office_staff"];
+
 /** Platform-level roles (users.platform_role) for MogulForge staff. */
 export const PLATFORM_ROLES = ["platform_admin", "support_admin"] as const;
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];

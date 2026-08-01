@@ -12,7 +12,7 @@ Marketing website for MogulForge with an "AI Revenue Rescue" scan feature. Built
 - Revenue Rescue public surface: `/revenue-rescue` (landing: hero, problem, how-it-works, pricing, FAQ), `/revenue-rescue/scan` (the original AI quick-scan form), `/revenue-rescue/calculator`, `/revenue-rescue/demo` (read-only dashboard from labeled demo data), `/revenue-rescue/install`, `/revenue-rescue/integrations`
 - `lib/rescue-config.ts` — hardcoded pricing plans, example metrics, and calculator defaults (becomes admin-editable with the subscriptions task)
 - `lib/rescue-demo-data.ts` — fictional 40-lead demo dataset powering `/revenue-rescue/demo`; aggregates are computed from the dataset so they always match
-- "Start a Sprint" CTAs point to `/contact` until the `/revenue-rescue/start` intake wizard ships (separate task)
+- `/revenue-rescue/start` — 7-step client intake wizard (company, lead sources, file upload, column mapping, campaign prefs, confirmations, review); requires login, creates a self-serve starter org (or reuses the user's managed org) via `lib/rescue-intake.ts`
 - `components/`, `lib/` — UI components and helpers (`lib/openai.ts`)
 - `worker/` — Cloudflare worker entry (used for Cloudflare hosting, not needed on Replit)
 
@@ -24,7 +24,15 @@ Marketing website for MogulForge with an "AI Revenue Rescue" scan feature. Built
 - Tenant data layer: `lib/tenant.ts` — every query takes an organizationId. Roles in `lib/roles.ts`, feature keys in `lib/entitlements.ts`, plan presets in `lib/plans.ts`.
 - Admin portal (platform admins): `/admin/organizations` (list/detail), `/admin/provision-client`, install-kit page, `/admin/audit-logs`, `/admin/login`. Legacy ADMIN_PASSWORD cookie is folded in as platform admin (`isPlatformAdmin` in `lib/admin-auth.ts`); users can also hold `users.platform_role`.
 - Audit logging via `lib/audit.ts` (`logAudit`).
-- Tests: `npm test` runs `tests/tenant-isolation.test.mjs` over live HTTP against the dev server on port 5000 (needs the workflow running, DATABASE_URL, ADMIN_PASSWORD).
+- Tests: `npm test` runs `tests/*.test.mjs` (tenant isolation, import unit tests, import pipeline e2e) over live HTTP against the dev server on port 5000 (needs the workflow running, DATABASE_URL, ADMIN_PASSWORD). Unit tests import `.ts` lib modules directly (Node 22 type stripping; relative imports inside `lib/rescue-import` use explicit `.ts` extensions, enabled by `allowImportingTsExtensions`).
+
+
+## Lead import pipeline (Revenue Rescue)
+- Schema in `scripts/db/002_revenue_rescue_imports.sql` (idempotent): rescue_intakes, lead_imports (raw file bytes in a private bytea column — never publicly served), rescue_leads (all contact/project/consent/suppression fields, org-scoped), suppression_records, import_rejected_rows.
+- `lib/rescue-import/` — pure modules (fields, csv with formula-injection escaping, normalize for phone/email/date/money/consent, mapping auto-match with confidence, parse-upload for csv/xlsx/xls/json) plus server-only `store.ts` and `pipeline.ts` (staged run: validating → cleaning → deduplicating → suppression_checking → importing → complete/partial/failed; in-process, non-blocking, atomic claim prevents double runs; retry clears prior results first).
+- Dedupe priority: external record id > normalized email > normalized phone (in-file, then vs existing org leads). Opt-out rows are imported suppressed and added to suppression_records; rows matching the suppression list import as suppressed.
+- APIs: `/api/revenue-rescue/template` (sample CSV), `/api/revenue-rescue/intake` (+`/preview`), `/api/orgs/[orgId]/imports` (list/upload), `/[importId]` (detail, polled), `/mapping`, `/retry`, `/rejected` (escaped CSV export). Writes need `IMPORT_WRITE_ROLES` + `lead_import` entitlement.
+- Dashboard: `/dashboard/revenue-rescue/imports` (org switcher, status/progress, counts, stage log, retry, rejected-row download, new-import upload + mapping). Limits: 8 MB, 20k rows. `xlsx` package installed from the SheetJS CDN tarball (npm 0.18.5 is vulnerable — don't downgrade).
 
 ## Environment
 - `OPENAI_API_KEY` required for the Revenue Rescue scan API; `OPENAI_MODEL` optional.
