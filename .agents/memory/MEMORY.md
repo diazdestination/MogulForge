@@ -6,3 +6,4 @@
 - [Node type-stripping limits](node-type-stripping.md) — unit-testable libs must avoid TS syntax needing transformation (constructor param properties, enums); tsc passes but node --test fails.
 - [Embed security model](embed-security-model.md) — embed token rides the iframe query string so the proxy can pin per-org frame-ancestors CSP; short TTL + per-call origin checks make that acceptable.
 - [Per-org theming](per-org-theming.md) — Tailwind colors are static build-time hex; org branding accents must be inline styles, never CSS vars or utility classes.
+- [Stripe connector credential shape](stripe-connector-credentials.md) — connection settings use `secret`/`publishable`, not `secret_key`; getClient/proxyFetch don't work, fetch creds via connection API.
