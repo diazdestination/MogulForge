@@ -4,6 +4,9 @@ import { getDashboardContext } from "@/lib/dashboard-context";
 import { RescueDashboardGate } from "@/components/rescue-dashboard-gate";
 import { getUsageStatus } from "@/lib/usage";
 import { SUBSCRIPTION_STATUS_LABELS } from "@/lib/usage-metrics";
+import { listPublicPlans } from "@/lib/subscriptions";
+import { MANAGER_ROLES } from "@/lib/roles";
+import { PlanPicker, type PlanCard } from "@/components/plan-picker";
 
 export const metadata: Metadata = { title: "Plan & Usage — Dashboard", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -15,8 +18,26 @@ export default async function PlanUsagePage({ searchParams }: { searchParams: Pr
   if (ctx.kind === "unauthenticated") redirect("/login");
   if (ctx.kind !== "ok") return <RescueDashboardGate ctx={ctx} />;
 
-  const usage = await getUsageStatus(ctx.active.id);
+  const [usage, publicPlans] = await Promise.all([getUsageStatus(ctx.active.id), listPublicPlans()]);
   if (!usage) return null;
+
+  const canManage = MANAGER_ROLES.includes(ctx.role);
+  // For each candidate plan, the usage lines that would already be over its limits.
+  const planCards: PlanCard[] = publicPlans.map((plan) => ({
+    id: plan.id,
+    name: plan.name,
+    blurb: plan.blurb,
+    price: plan.price,
+    cadence: plan.cadence,
+    features: plan.features,
+    featured: plan.featured,
+    overLimit: usage.lines
+      .filter((line) => {
+        const limit = plan.limits[line.metric];
+        return limit !== undefined && line.used > limit;
+      })
+      .map((line) => ({ label: line.label, used: line.used, limit: plan.limits[line.metric]! })),
+  }));
 
   return (
     <section className="shell py-10">
@@ -34,14 +55,16 @@ export default async function PlanUsagePage({ searchParams }: { searchParams: Pr
 
         {usage.gateBlock.blocked && (
           <div className="mt-4 rounded-xl border border-red-400/40 bg-red-400/5 px-5 py-4 text-sm text-red-300">
-            {usage.gateBlock.reason} Opt-out processing, suppression updates, and data exports keep working.
+            {usage.gateBlock.reason} Opt-out processing, suppression updates, and data exports keep working.{" "}
+            <a href="#plans" className="font-semibold text-red-200 underline underline-offset-2">See plans</a>
           </div>
         )}
         {!usage.gateBlock.blocked && usage.warnings.length > 0 && (
           <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/5 px-5 py-4 text-sm text-amber-200">
             {usage.warnings.some((w) => w.warning === 100)
               ? "One or more limits are fully used — actions that consume them are paused until the period resets or the plan is upgraded. Opt-outs and suppression updates always keep working."
-              : "You are approaching one or more plan limits. Consider upgrading before actions get paused."}
+              : "You are approaching one or more plan limits. Consider upgrading before actions get paused."}{" "}
+            <a href="#plans" className="font-semibold text-amber-100 underline underline-offset-2">See plans</a>
           </div>
         )}
 
@@ -72,9 +95,11 @@ export default async function PlanUsagePage({ searchParams }: { searchParams: Pr
           })}
         </div>
 
+        <PlanPicker orgId={ctx.active.id} currentPlanId={usage.plan.id} plans={planCards} canManage={canManage} />
+
         <p className="mt-8 text-xs text-white/40">
           Limits protect your plan, never your compliance: opt-out processing, do-not-contact list updates, and account-closure
-          data exports are never blocked — even over limit or with a paused account. To change plans, contact MogulForge support.
+          data exports are never blocked — even over limit or with a paused account. Questions about billing? Contact MogulForge support.
         </p>
       </div>
     </section>
