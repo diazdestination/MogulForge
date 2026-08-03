@@ -6,6 +6,7 @@ import { guardV1, PublicApiError, readV1Json } from "@/lib/public-api/http";
 import { intakeLead, parseLeadIntake } from "@/lib/public-api/lead-intake";
 import { listLeads } from "@/lib/rescue-analysis/store";
 import { emitOrgEventInBackground } from "@/lib/webhooks/outgoing";
+import { pushLeadToCrmInBackground } from "@/lib/crm/sync";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -51,6 +52,8 @@ export const POST = guardV1(async (request: Request) => {
     return NextResponse.json({ data: { accepted: true, duplicate: true } }, { status: 409, headers: embedCorsHeaders(claims) });
   }
   emitOrgEventInBackground(org.id, "lead.created", { lead_id: result.leadId, source: "embed_widget" });
+  // Suppressed (do-not-contact) leads are deliberately withheld from external CRMs.
+  if (!result.suppressed) pushLeadToCrmInBackground(org.id, result.leadId);
   recordUsageInBackground(org.id, "leads_imported", 1);
   return NextResponse.json({ data: { accepted: true, id: result.leadId } }, { status: 201, headers: embedCorsHeaders(claims) });
 });

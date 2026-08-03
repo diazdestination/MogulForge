@@ -5,6 +5,7 @@ import { intakeLead, parseLeadIntake } from "@/lib/public-api/lead-intake";
 import { listLeads, LEAD_SORT_KEYS, type LeadSortKey } from "@/lib/rescue-analysis/store";
 import { isPipelineStage } from "@/lib/rescue-engage/pipeline";
 import { emitOrgEventInBackground } from "@/lib/webhooks/outgoing";
+import { pushLeadToCrmInBackground } from "@/lib/crm/sync";
 import { ApiError } from "@/lib/api-guard";
 import { recordUsageInBackground, requireActionCapacity } from "@/lib/usage";
 
@@ -70,6 +71,8 @@ export const POST = guardV1(async (request: Request) => {
       });
     }
     emitOrgEventInBackground(ctx.org.id, "lead.created", { lead_id: result.leadId, source: "public_api" });
+    // Suppressed (do-not-contact) leads are deliberately withheld from external CRMs.
+    if (!result.suppressed) pushLeadToCrmInBackground(ctx.org.id, result.leadId);
     recordUsageInBackground(ctx.org.id, "leads_imported", 1);
     return { status: 201, body: { data: { id: result.leadId, suppressed: result.suppressed } }, headers: ctx.rateHeaders };
   });

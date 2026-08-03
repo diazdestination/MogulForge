@@ -46,7 +46,16 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [createForm, setCreateForm] = useState<{ provider: string; name: string; url: string; authHeaderName: string; authHeaderValue: string } | null>(null);
+  const [createForm, setCreateForm] = useState<{
+    provider: string;
+    name: string;
+    url: string;
+    authHeaderName: string;
+    authHeaderValue: string;
+    accessToken: string;
+    apiKey: string;
+    locationId: string;
+  } | null>(null);
   const [editing, setEditing] = useState<Connection | null>(null);
   const [mappingDraft, setMappingDraft] = useState<FieldMappingEntry[]>([]);
 
@@ -102,12 +111,37 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
 
   function startEdit(conn: Connection) {
     setEditing(conn);
-    setMappingDraft(conn.fieldMapping.length > 0 ? conn.fieldMapping : [
-      { source: "firstName", target: "first_name", transform: "none" },
-      { source: "lastName", target: "last_name", transform: "none" },
-      { source: "email", target: "email", transform: "lowercase" },
-      { source: "phone", target: "phone", transform: "e164_us" },
-    ]);
+    const defaults: Record<string, FieldMappingEntry[]> = {
+      hubspot: [
+        { source: "firstName", target: "firstname", transform: "none" },
+        { source: "lastName", target: "lastname", transform: "none" },
+        { source: "email", target: "email", transform: "lowercase" },
+        { source: "phone", target: "phone", transform: "e164_us" },
+        { source: "city", target: "city", transform: "none" },
+        { source: "state", target: "state", transform: "none" },
+        { source: "zip", target: "zip", transform: "none" },
+      ],
+      gohighlevel: [
+        { source: "firstName", target: "firstName", transform: "none" },
+        { source: "lastName", target: "lastName", transform: "none" },
+        { source: "email", target: "email", transform: "lowercase" },
+        { source: "phone", target: "phone", transform: "e164_us" },
+        { source: "address", target: "address1", transform: "none" },
+        { source: "city", target: "city", transform: "none" },
+        { source: "state", target: "state", transform: "none" },
+        { source: "zip", target: "postalCode", transform: "none" },
+      ],
+    };
+    setMappingDraft(
+      conn.fieldMapping.length > 0
+        ? conn.fieldMapping
+        : defaults[conn.provider] ?? [
+            { source: "firstName", target: "first_name", transform: "none" },
+            { source: "lastName", target: "last_name", transform: "none" },
+            { source: "email", target: "email", transform: "lowercase" },
+            { source: "phone", target: "phone", transform: "e164_us" },
+          ],
+    );
   }
 
   return (
@@ -133,7 +167,7 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
               {p.status === "available" && (
                 <button
                   className={`${btnGhost} mt-3`}
-                  onClick={() => setCreateForm({ provider: p.id, name: "", url: "", authHeaderName: "", authHeaderValue: "" })}
+                  onClick={() => setCreateForm({ provider: p.id, name: "", url: "", authHeaderName: "", authHeaderValue: "", accessToken: "", apiKey: "", locationId: "" })}
                 >
                   Connect
                 </button>
@@ -148,36 +182,88 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
           className={box}
           onSubmit={async (e) => {
             e.preventDefault();
+            const config =
+              createForm.provider === "hubspot"
+                ? { accessToken: createForm.accessToken }
+                : createForm.provider === "gohighlevel"
+                  ? { apiKey: createForm.apiKey, locationId: createForm.locationId }
+                  : {
+                      url: createForm.url,
+                      authHeaderName: createForm.authHeaderName || undefined,
+                      authHeaderValue: createForm.authHeaderValue || undefined,
+                    };
             const created = await call(`/api/orgs/${orgId}/integrations/crm`, {
               provider: createForm.provider,
               name: createForm.name,
-              config: {
-                url: createForm.url,
-                authHeaderName: createForm.authHeaderName || undefined,
-                authHeaderValue: createForm.authHeaderValue || undefined,
-              },
+              config,
             });
             if (created) setCreateForm(null);
           }}
         >
-          <p className="text-sm font-bold">New {createForm.provider === "zapier" ? "Zapier / Make / n8n" : "generic webhook"} connection</p>
+          <p className="text-sm font-bold">
+            New{" "}
+            {createForm.provider === "zapier"
+              ? "Zapier / Make / n8n"
+              : createForm.provider === "hubspot"
+                ? "HubSpot"
+                : createForm.provider === "gohighlevel"
+                  ? "GoHighLevel"
+                  : "generic webhook"}{" "}
+            connection
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-white/60">
               Connection name
               <input className={input} required maxLength={100} value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-white/60">
-              Destination URL (POST)
-              <input className={input} required placeholder="https://hooks.zapier.com/…" value={createForm.url} onChange={(e) => setCreateForm({ ...createForm, url: e.target.value })} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-white/60">
-              Auth header name (optional)
-              <input className={input} placeholder="Authorization" value={createForm.authHeaderName} onChange={(e) => setCreateForm({ ...createForm, authHeaderName: e.target.value })} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-white/60">
-              Auth header value (optional)
-              <input className={input} placeholder="Bearer …" value={createForm.authHeaderValue} onChange={(e) => setCreateForm({ ...createForm, authHeaderValue: e.target.value })} />
-            </label>
+            {createForm.provider === "hubspot" ? (
+              <label className="flex flex-col gap-1 text-xs text-white/60">
+                Private app access token
+                <input
+                  className={input}
+                  required
+                  type="password"
+                  placeholder="pat-na1-…"
+                  value={createForm.accessToken}
+                  onChange={(e) => setCreateForm({ ...createForm, accessToken: e.target.value })}
+                />
+                <span className="text-[10px] text-white/40">HubSpot → Settings → Integrations → Private Apps. Needs crm.objects.contacts read + write. Stored server-side only.</span>
+              </label>
+            ) : createForm.provider === "gohighlevel" ? (
+              <>
+                <label className="flex flex-col gap-1 text-xs text-white/60">
+                  Private integration token
+                  <input
+                    className={input}
+                    required
+                    type="password"
+                    placeholder="pit-…"
+                    value={createForm.apiKey}
+                    onChange={(e) => setCreateForm({ ...createForm, apiKey: e.target.value })}
+                  />
+                  <span className="text-[10px] text-white/40">GHL → Settings → Private Integrations. Needs contacts read + write scopes. Stored server-side only.</span>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-white/60">
+                  Location ID
+                  <input className={input} required placeholder="e.g. ve9EPM428h8vShlRW1KT" value={createForm.locationId} onChange={(e) => setCreateForm({ ...createForm, locationId: e.target.value })} />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="flex flex-col gap-1 text-xs text-white/60">
+                  Destination URL (POST)
+                  <input className={input} required placeholder="https://hooks.zapier.com/…" value={createForm.url} onChange={(e) => setCreateForm({ ...createForm, url: e.target.value })} />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-white/60">
+                  Auth header name (optional)
+                  <input className={input} placeholder="Authorization" value={createForm.authHeaderName} onChange={(e) => setCreateForm({ ...createForm, authHeaderName: e.target.value })} />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-white/60">
+                  Auth header value (optional)
+                  <input className={input} placeholder="Bearer …" value={createForm.authHeaderValue} onChange={(e) => setCreateForm({ ...createForm, authHeaderValue: e.target.value })} />
+                </label>
+              </>
+            )}
           </div>
           <div className="mt-4 flex gap-2">
             <button className={btn} disabled={busy}>
@@ -304,6 +390,29 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
             >
               Send test payload
             </button>
+            <select
+              className={input}
+              value={editing.syncDirection}
+              disabled={busy}
+              onChange={(e) => call(`/api/orgs/${orgId}/integrations/crm/${editing.id}`, { syncDirection: e.target.value }, "PATCH")}
+              title="Sync direction"
+            >
+              <option value="outbound">Outbound only</option>
+              <option value="inbound">Inbound only</option>
+              <option value="bidirectional">Bidirectional</option>
+            </select>
+            {(editing.provider === "hubspot" || editing.provider === "gohighlevel") && editing.status === "active" && editing.syncDirection !== "outbound" && (
+              <button
+                className={btnGhost}
+                disabled={busy}
+                onClick={async () => {
+                  const body = await call(`/api/orgs/${orgId}/integrations/crm/${editing.id}/pull`);
+                  if (body?.summary) setNotice(body.summary.ok ? body.summary.message : `Pull failed: ${body.summary.message}`);
+                }}
+              >
+                Pull updates now
+              </button>
+            )}
             {editing.status !== "active" ? (
               <button
                 className={btnGhost}

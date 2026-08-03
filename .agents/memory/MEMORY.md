@@ -9,3 +9,4 @@
 - [Stripe connector credential shape](stripe-connector-credentials.md) — connection settings use `secret`/`publishable`, not `secret_key`; getClient/proxyFetch don't work, fetch creds via connection API.
 - [Embed dev testing](embed-dev-testing.md) — to view token-gated /embed/* pages locally, allow-list the dev origin and mint the token for it; hung HTTP tests can saturate the dev server's PG pool (restart workflow).
 - [Custom-domain routing](custom-domain-routing.md) — middleware stays DB-free (rewrite to a dynamic page for lookups); undici fetch strips spoofed Host headers, use node:http in tests.
+- [Test suite serialization](test-suite-serialization.md) — never run `npm test` (all files parallel) against next dev; provisioning stampedes hang the server. Run test files one at a time.

@@ -296,9 +296,14 @@ export type LeadInsert = {
   notes: string | null;
 };
 
-export async function insertLeads(organizationId: string, leads: LeadInsert[]): Promise<number> {
+export async function insertLeads(
+  organizationId: string,
+  leads: LeadInsert[],
+): Promise<{ inserted: number; insertedIds: string[]; nonSuppressedIds: string[] }> {
   const pool = getPool();
   let inserted = 0;
+  const insertedIds: string[] = [];
+  const nonSuppressedIds: string[] = [];
   const fields = [
     "import_id", "first_name", "last_name", "email", "email_normalized", "phone", "phone_normalized",
     "address", "city", "state", "zip", "project_type", "project_description", "estimated_value",
@@ -324,12 +329,16 @@ export async function insertLeads(organizationId: string, leads: LeadInsert[]): 
       values.push(`($1, ${placeholders.join(", ")})`);
     }
     const result = await pool.query(
-      `INSERT INTO rescue_leads (organization_id, ${fields.join(", ")}) VALUES ${values.join(", ")}`,
+      `INSERT INTO rescue_leads (organization_id, ${fields.join(", ")}) VALUES ${values.join(", ")} RETURNING id, suppressed`,
       params,
     );
     inserted += result.rowCount ?? 0;
+    for (const row of result.rows) {
+      insertedIds.push(String(row.id));
+      if (!row.suppressed) nonSuppressedIds.push(String(row.id));
+    }
   }
-  return inserted;
+  return { inserted, insertedIds, nonSuppressedIds };
 }
 
 /** Existing org-level dedupe keys among the given candidate values. */

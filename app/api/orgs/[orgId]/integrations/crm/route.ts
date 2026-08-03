@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ApiError, guard, readJson, requireEntitlement, requireMember } from "@/lib/api-guard";
 import { logAudit } from "@/lib/audit";
-import { CRM_PROVIDERS, isConnectableProvider, parseGenericConfig } from "@/lib/crm/adapters";
+import { CRM_PROVIDERS, isConnectableProvider, parseConnectionConfig, redactConnectionConfig } from "@/lib/crm/adapters";
 import { createCrmConnection, listCrmConnections, listSyncConflicts } from "@/lib/crm/store";
 import { MANAGER_ROLES } from "@/lib/roles";
 
@@ -16,7 +16,9 @@ export const GET = guard(async (_request: Request, { params }: Ctx) => {
   const { org } = await requireMember(orgId, MANAGER_ROLES);
   await requireEntitlement(org.id, "revenue_rescue");
   const [connections, conflicts] = await Promise.all([listCrmConnections(org.id), listSyncConflicts(org.id, { status: "pending" })]);
-  return NextResponse.json({ providers: CRM_PROVIDERS, connections, conflicts });
+  // Credentials never reach the browser — secrets are replaced with a placeholder.
+  const safeConnections = connections.map((c) => ({ ...c, config: redactConnectionConfig(c.provider, c.config) }));
+  return NextResponse.json({ providers: CRM_PROVIDERS, connections: safeConnections, conflicts });
 });
 
 /** Creates a CRM connection draft. Only providers marked available can be configured. */
@@ -31,10 +33,10 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
   }
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 100) : "";
   if (!name) throw new ApiError(400, "A connection name is required.");
-  const { config, error } = parseGenericConfig(body.config ?? {});
+  const { config, error } = parseConnectionConfig(provider, body.config ?? {});
   if (!config) throw new ApiError(400, error ?? "Invalid connection config.");
 
-  const connection = await createCrmConnection(org.id, { provider, name, config: config as unknown as Record<string, unknown>, createdBy: user.id });
+  const connection = await createCrmConnection(org.id, { provider, name, config, createdBy: user.id });
   await logAudit({
     organizationId: org.id,
     actorUserId: user.id,
@@ -44,5 +46,5 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
     targetId: connection.id,
     metadata: { provider, name },
   });
-  return NextResponse.json({ connection }, { status: 201 });
+  return NextResponse.json({ connection: { ...connection, config: redactConnectionConfig(connection.provider, connection.config) } }, { status: 201 });
 });

@@ -19,6 +19,7 @@ import {
   type RejectedRow,
 } from "./store.ts";
 import { logAudit } from "../audit";
+import { pushLeadsToCrmInBackground } from "../crm/sync";
 import { getEntitlement } from "../tenant";
 import { recordUsageInBackground } from "../usage";
 import { startAnalysisRun } from "../rescue-analysis/engine.ts";
@@ -228,9 +229,12 @@ async function processClaimedImport(organizationId: string, importId: string, ac
 
     // ---- Stage: importing -------------------------------------------------
     await setImportStage(organizationId, importId, "importing", `Storing ${toInsert.length.toLocaleString()} leads.`, { suppressedCount });
-    const importedCount = await insertLeads(organizationId, toInsert);
+    const { inserted: importedCount, nonSuppressedIds } = await insertLeads(organizationId, toInsert);
     if (rejected.length > 0) await insertRejectedRows(organizationId, importId, rejected);
     if (importedCount > 0) recordUsageInBackground(organizationId, "leads_imported", importedCount);
+    // Imported leads flow to active CRM connections too — suppressed (opted-out /
+    // do-not-contact) leads are deliberately kept out of external systems.
+    if (nonSuppressedIds.length > 0) pushLeadsToCrmInBackground(organizationId, nonSuppressedIds);
 
     // Nothing imported is never "complete": all-invalid → failed, otherwise
     // (all duplicates / mix) → partial, so the dashboard makes the outcome clear.

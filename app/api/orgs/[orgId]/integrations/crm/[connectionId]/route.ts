@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ApiError, guard, readJson, requireEntitlement, requireMember } from "@/lib/api-guard";
-import { parseGenericConfig } from "@/lib/crm/adapters";
+import { mergeStoredSecrets, parseConnectionConfig, redactConnectionConfig } from "@/lib/crm/adapters";
 import { validateFieldMapping } from "@/lib/crm/mapping";
 import { deleteCrmConnection, getCrmConnection, updateCrmConnection } from "@/lib/crm/store";
 import { MANAGER_ROLES } from "@/lib/roles";
@@ -29,9 +29,11 @@ export const PATCH = guard(async (request: Request, { params }: Ctx) => {
     patch.name = name;
   }
   if (body.config !== undefined) {
-    const { config, error } = parseGenericConfig(body.config);
+    // Clients may echo back the redaction placeholder to mean "keep the stored secret".
+    const merged = mergeStoredSecrets(existing.provider, (body.config ?? {}) as Record<string, unknown>, existing.config);
+    const { config, error } = parseConnectionConfig(existing.provider, merged);
     if (!config) throw new ApiError(400, error ?? "Invalid connection config.");
-    patch.config = config as unknown as Record<string, unknown>;
+    patch.config = config;
     // Changing the destination invalidates any previous successful test.
     patch.lastTestResult = null;
     if (existing.status === "active") patch.status = "testing";
@@ -57,7 +59,7 @@ export const PATCH = guard(async (request: Request, { params }: Ctx) => {
   }
   const connection = await updateCrmConnection(org.id, connectionId, patch);
   if (!connection) throw new ApiError(404, "Connection not found.");
-  return NextResponse.json({ connection });
+  return NextResponse.json({ connection: { ...connection, config: redactConnectionConfig(connection.provider, connection.config) } });
 });
 
 export const DELETE = guard(async (_request: Request, { params }: Ctx) => {

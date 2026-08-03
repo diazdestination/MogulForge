@@ -5,6 +5,7 @@ import { intakeLead, parseLeadIntake, normalizeEmail, normalizePhone } from "../
 import { suppressLeadContact, setLeadStage, logActivity } from "../rescue-engage/store";
 import { emitOrgEventInBackground } from "./outgoing";
 import { recordSyncConflict } from "../crm/store";
+import { pushLeadToCrmInBackground } from "../crm/sync";
 import { checkActionCapacity, recordUsageInBackground } from "../usage";
 
 /**
@@ -193,6 +194,8 @@ async function processEvent(endpoint: IncomingEndpoint, eventType: IncomingEvent
       detail: `Endpoint: ${endpoint.name}`,
     });
     emitOrgEventInBackground(organizationId, "lead.created", { lead_id: result.leadId, source: "incoming_webhook" });
+    // Suppressed (do-not-contact) leads are deliberately withheld from external CRMs.
+    if (!result.suppressed) pushLeadToCrmInBackground(organizationId, result.leadId);
     recordUsageInBackground(organizationId, "leads_imported", 1);
     return { status: "processed", result: `Created lead ${result.leadId}${result.suppressed ? " (suppressed on arrival)" : ""}.` };
   }
