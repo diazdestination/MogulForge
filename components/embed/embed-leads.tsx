@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { parseEmbedBranding, type EmbedBranding } from "./embed-branding";
+import { DEFAULT_EMBED_STYLES, embedStyles, parseEmbedBranding, resolveEmbedTheme, type EmbedBranding } from "./embed-branding";
 
 type EmbedLead = {
   id: string;
@@ -12,8 +12,6 @@ type EmbedLead = {
   pipelineStage: string | null;
   createdAt: string;
 };
-
-const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-5";
 
 function postHeight() {
   if (typeof window === "undefined" || window.parent === window) return;
@@ -28,6 +26,9 @@ export function EmbedLeads() {
   const [total, setTotal] = useState(0);
   const [branding, setBranding] = useState<EmbedBranding | null>(null);
   const [error, setError] = useState("");
+
+  const theme = useMemo(() => resolveEmbedTheme(branding, searchParams), [branding, searchParams]);
+  const s = useMemo(() => (branding ? embedStyles(theme, branding) : DEFAULT_EMBED_STYLES), [branding, theme]);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -61,28 +62,31 @@ export function EmbedLeads() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className={`${box} border-red-400/30 text-sm text-red-200`}>{error}</div>
+      <div className="p-6" style={s.root}>
+        <div className="p-5 text-sm" style={{ ...s.card, borderColor: "rgba(248,113,113,0.4)", ...s.error }}>{error}</div>
       </div>
     );
   }
-  if (!leads) return <div className="p-6 text-sm text-white/50">Loading leads…</div>;
+  if (!leads) return <div className="p-6 text-sm" style={{ ...s.root, ...s.muted }}>Loading leads…</div>;
+
+  const accent = String(s.accentSolid.backgroundColor);
+  const rowBorder = theme.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(17,20,24,0.07)";
 
   return (
-    <div className="space-y-4 p-5 text-white">
+    <div className="space-y-4 p-5" style={s.root}>
       <div className="flex items-baseline justify-between">
         <h1 className="text-lg font-bold">{branding?.displayName ? `${branding.displayName} — Recent leads` : "Recent leads"}</h1>
         {(branding?.poweredBy.show ?? true) && (
-          <span className="text-[10px] uppercase tracking-wider text-white/40">{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
+          <span className="text-[10px] uppercase tracking-wider" style={s.faint}>{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
         )}
       </div>
       {leads.length === 0 ? (
-        <div className={`${box} text-sm text-white/50`}>No leads yet.</div>
+        <div className="p-5 text-sm" style={{ ...s.card, ...s.muted }}>No leads yet.</div>
       ) : (
-        <div className={`${box} overflow-x-auto p-0`}>
+        <div className="overflow-x-auto" style={s.card}>
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-white/40">
+              <tr className="text-[11px] uppercase tracking-wider" style={{ borderBottom: `1px solid ${rowBorder}`, ...s.faint }}>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Score</th>
                 <th className="px-4 py-3 font-medium">Category</th>
@@ -91,28 +95,28 @@ export function EmbedLeads() {
               </tr>
             </thead>
             <tbody>
-              {leads.map((lead) => (
-                <tr key={lead.id} className="border-b border-white/5 last:border-0">
+              {leads.map((lead, i) => (
+                <tr key={lead.id} style={i < leads.length - 1 ? { borderBottom: `1px solid ${rowBorder}` } : undefined}>
                   <td className="px-4 py-2.5 font-medium">
                     {[lead.firstName, lead.lastName].filter(Boolean).join(" ") || "—"}
                   </td>
                   <td className="px-4 py-2.5">
                     {typeof lead.score === "number" ? (
-                      <span className={lead.score >= 70 ? "font-bold text-forge-lime" : "text-white/80"}>{lead.score}</span>
+                      <span className={lead.score >= 70 ? "font-bold" : undefined} style={lead.score >= 70 ? { color: accent } : s.muted}>{lead.score}</span>
                     ) : (
-                      <span className="text-white/40">—</span>
+                      <span style={s.faint}>—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 capitalize text-white/70">{lead.category ? lead.category.replace(/_/g, " ") : "—"}</td>
-                  <td className="px-4 py-2.5 capitalize text-white/70">{lead.pipelineStage ? lead.pipelineStage.replace(/_/g, " ") : "—"}</td>
-                  <td className="px-4 py-2.5 text-white/50">{new Date(lead.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-2.5 capitalize" style={s.muted}>{lead.category ? lead.category.replace(/_/g, " ") : "—"}</td>
+                  <td className="px-4 py-2.5 capitalize" style={s.muted}>{lead.pipelineStage ? lead.pipelineStage.replace(/_/g, " ") : "—"}</td>
+                  <td className="px-4 py-2.5" style={s.muted}>{new Date(lead.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <p className="text-[11px] text-white/40">
+      <p className="text-[11px]" style={s.faint}>
         Showing the {leads.length} most recent of {total.toLocaleString()} leads.
       </p>
     </div>

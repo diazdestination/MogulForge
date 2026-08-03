@@ -1,15 +1,13 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { accentBg, parseEmbedBranding, type EmbedBranding } from "./embed-branding";
+import { DEFAULT_EMBED_STYLES, embedStyles, parseEmbedBranding, resolveEmbedTheme, themeLogoUrl, type EmbedBranding } from "./embed-branding";
 
 type Metrics = {
   cards: Record<string, number>;
   funnel: Array<{ stage: string; count: number }>;
   campaignPerformance: Array<{ id: string; name: string; status: string; channel: string; messaged: number; replied: number }>;
 } & Record<string, unknown>;
-
-const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-5";
 
 function postHeight() {
   if (typeof window === "undefined" || window.parent === window) return;
@@ -24,6 +22,10 @@ export function EmbedDashboard() {
   const [orgName, setOrgName] = useState("");
   const [branding, setBranding] = useState<EmbedBranding | null>(null);
   const [error, setError] = useState("");
+
+  const theme = useMemo(() => resolveEmbedTheme(branding, searchParams), [branding, searchParams]);
+  const s = useMemo(() => (branding ? embedStyles(theme, branding) : DEFAULT_EMBED_STYLES), [branding, theme]);
+  const logo = themeLogoUrl(theme, branding);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -57,12 +59,12 @@ export function EmbedDashboard() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className={`${box} border-red-400/30 text-sm text-red-200`}>{error}</div>
+      <div className="p-6" style={s.root}>
+        <div className="p-5 text-sm" style={{ ...s.card, borderColor: "rgba(248,113,113,0.4)", ...s.error }}>{error}</div>
       </div>
     );
   }
-  if (!metrics) return <div className="p-6 text-sm text-white/50">Loading dashboard…</div>;
+  if (!metrics) return <div className="p-6 text-sm" style={{ ...s.root, ...s.muted }}>Loading dashboard…</div>;
 
   const cards: Array<{ label: string; key: string; money?: boolean }> = [
     { label: "Leads imported", key: "leadsImported" },
@@ -74,17 +76,17 @@ export function EmbedDashboard() {
   ];
 
   return (
-    <div className="space-y-5 p-5 text-white">
+    <div className="space-y-5 p-5" style={s.root}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          {branding?.logoUrl && (
+          {logo && (
             // eslint-disable-next-line @next/next/no-img-element -- external client logo, unknown host
-            <img src={branding.logoUrl} alt="" className="h-6 w-auto" />
+            <img src={logo} alt="" className="h-6 w-auto" />
           )}
           <h1 className="text-lg font-bold">{orgName ? `${orgName} — Revenue Rescue` : "Revenue Rescue"}</h1>
         </div>
         {(branding?.poweredBy.show ?? true) && (
-          <span className="text-[10px] uppercase tracking-wider text-white/40">{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
+          <span className="text-[10px] uppercase tracking-wider" style={s.faint}>{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -92,24 +94,24 @@ export function EmbedDashboard() {
           const raw = metrics.cards?.[card.key];
           const value = typeof raw === "number" ? raw : 0;
           return (
-            <div key={card.key} className={box}>
-              <p className="text-xs text-white/50">{card.label}</p>
+            <div key={card.key} className="p-5" style={s.card}>
+              <p className="text-xs" style={s.muted}>{card.label}</p>
               <p className="mt-2 text-2xl font-bold">{card.money ? `$${Math.round(value).toLocaleString()}` : value.toLocaleString()}</p>
             </div>
           );
         })}
       </div>
       {Array.isArray(metrics.funnel) && metrics.funnel.length > 0 && (
-        <div className={box}>
-          <p className="text-xs font-bold uppercase tracking-wider text-white/50">Pipeline funnel</p>
+        <div className="p-5" style={s.card}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={s.muted}>Pipeline funnel</p>
           <div className="mt-3 space-y-2">
             {metrics.funnel.filter((f) => f.count > 0).map((step) => {
               const max = Math.max(...metrics.funnel.map((f) => f.count), 1);
               return (
                 <div key={step.stage} className="flex items-center gap-3 text-xs">
-                  <span className="w-36 shrink-0 capitalize text-white/60">{step.stage.replace(/_/g, " ")}</span>
-                  <div className="h-2 flex-1 rounded-full bg-white/5">
-                    <div className="h-2 rounded-full bg-forge-lime/70" style={{ width: `${Math.max(4, (step.count / max) * 100)}%`, ...accentBg(branding) }} />
+                  <span className="w-36 shrink-0 capitalize" style={s.muted}>{step.stage.replace(/_/g, " ")}</span>
+                  <div className="h-2 flex-1 rounded-full" style={{ backgroundColor: theme.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(17,20,24,0.07)" }}>
+                    <div className="h-2 rounded-full" style={{ width: `${Math.max(4, (step.count / max) * 100)}%`, backgroundColor: String(s.accentSolid.backgroundColor) }} />
                   </div>
                   <span className="w-10 text-right font-bold">{step.count}</span>
                 </div>

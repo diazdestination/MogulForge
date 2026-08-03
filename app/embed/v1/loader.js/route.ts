@@ -17,6 +17,23 @@ const LOADER_SOURCE = `(function () {
     return "";
   }
 
+  var HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+  var RADII = ["none", "sm", "md", "lg", "xl"];
+
+  // Validates theme options and returns extra query params for the iframe URL.
+  // Only vetted values pass through (hex colors, enum radii, https logo URLs) —
+  // the embedded page re-validates everything, so no arbitrary CSS can ride along.
+  function themeParams(theme) {
+    if (!theme || typeof theme !== "object") return "";
+    var out = "";
+    if (theme.mode === "dark" || theme.mode === "light") out += "&t_mode=" + theme.mode;
+    if (typeof theme.accentColor === "string" && HEX_RE.test(theme.accentColor)) out += "&t_accent=" + encodeURIComponent(theme.accentColor);
+    if (typeof theme.backgroundColor === "string" && HEX_RE.test(theme.backgroundColor)) out += "&t_bg=" + encodeURIComponent(theme.backgroundColor);
+    if (typeof theme.radius === "string" && RADII.indexOf(theme.radius) !== -1) out += "&t_radius=" + theme.radius;
+    if (typeof theme.logoUrl === "string" && /^https:\\/\\//i.test(theme.logoUrl) && theme.logoUrl.length <= 500) out += "&t_logo=" + encodeURIComponent(theme.logoUrl);
+    return out;
+  }
+
   function mount(el, options) {
     if (!el) throw new Error("RevenueRescue.mount: target element is required");
     var opts = options || {};
@@ -25,7 +42,7 @@ const LOADER_SOURCE = `(function () {
     var path = MODULE_PATHS[moduleName] || MODULE_PATHS.dashboard;
     var base = resolveBase(opts.baseUrl);
     var iframe = document.createElement("iframe");
-    iframe.src = base + path + "?token=" + encodeURIComponent(opts.token) + "&module=" + encodeURIComponent(moduleName);
+    iframe.src = base + path + "?token=" + encodeURIComponent(opts.token) + "&module=" + encodeURIComponent(moduleName) + themeParams(opts.theme);
     iframe.style.width = "100%";
     iframe.style.border = "0";
     iframe.style.display = "block";
@@ -56,7 +73,14 @@ const LOADER_SOURCE = `(function () {
           token: el.getAttribute("data-rr-token"),
           module: el.getAttribute("data-rr-embed") || "dashboard",
           height: el.getAttribute("data-rr-height") ? parseInt(el.getAttribute("data-rr-height"), 10) : undefined,
-          baseUrl: el.getAttribute("data-rr-base") || undefined
+          baseUrl: el.getAttribute("data-rr-base") || undefined,
+          theme: {
+            mode: el.getAttribute("data-rr-mode") || undefined,
+            accentColor: el.getAttribute("data-rr-accent") || undefined,
+            backgroundColor: el.getAttribute("data-rr-background") || undefined,
+            radius: el.getAttribute("data-rr-radius") || undefined,
+            logoUrl: el.getAttribute("data-rr-logo") || undefined
+          }
         });
       } catch (err) { console.error("[RevenueRescue]", err); }
     }

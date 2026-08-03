@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { parseEmbedBranding, type EmbedBranding } from "./embed-branding";
+import { DEFAULT_EMBED_STYLES, embedStyles, parseEmbedBranding, resolveEmbedTheme, type EmbedBranding } from "./embed-branding";
 
 type EmbedAppointment = {
   id: string;
@@ -10,15 +10,6 @@ type EmbedAppointment = {
   scheduledEnd: string | null;
   status: string;
   address: string | null;
-};
-
-const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-5";
-
-const STATUS_STYLES: Record<string, string> = {
-  scheduled: "bg-forge-lime/15 text-forge-lime",
-  completed: "bg-white/10 text-white/70",
-  cancelled: "bg-red-400/15 text-red-300",
-  no_show: "bg-amber-400/15 text-amber-300",
 };
 
 function postHeight() {
@@ -33,6 +24,9 @@ export function EmbedAppointments() {
   const [appointments, setAppointments] = useState<EmbedAppointment[] | null>(null);
   const [branding, setBranding] = useState<EmbedBranding | null>(null);
   const [error, setError] = useState("");
+
+  const theme = useMemo(() => resolveEmbedTheme(branding, searchParams), [branding, searchParams]);
+  const s = useMemo(() => (branding ? embedStyles(theme, branding) : DEFAULT_EMBED_STYLES), [branding, theme]);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -65,38 +59,45 @@ export function EmbedAppointments() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className={`${box} border-red-400/30 text-sm text-red-200`}>{error}</div>
+      <div className="p-6" style={s.root}>
+        <div className="p-5 text-sm" style={{ ...s.card, borderColor: "rgba(248,113,113,0.4)", ...s.error }}>{error}</div>
       </div>
     );
   }
-  if (!appointments) return <div className="p-6 text-sm text-white/50">Loading appointments…</div>;
+  if (!appointments) return <div className="p-6 text-sm" style={{ ...s.root, ...s.muted }}>Loading appointments…</div>;
+
+  const statusStyle = (status: string): React.CSSProperties => {
+    if (status === "scheduled") return s.accentSoft;
+    if (status === "cancelled") return { backgroundColor: "rgba(248,113,113,0.15)", color: theme.mode === "dark" ? "#fca5a5" : "#b91c1c", borderRadius: s.accentSoft.borderRadius };
+    if (status === "no_show") return { backgroundColor: "rgba(251,191,36,0.15)", color: theme.mode === "dark" ? "#fcd34d" : "#92400e", borderRadius: s.accentSoft.borderRadius };
+    return { backgroundColor: theme.mode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(17,20,24,0.08)", ...s.muted, borderRadius: s.accentSoft.borderRadius };
+  };
 
   return (
-    <div className="space-y-4 p-5 text-white">
+    <div className="space-y-4 p-5" style={s.root}>
       <div className="flex items-baseline justify-between">
         <h1 className="text-lg font-bold">{branding?.displayName ? `${branding.displayName} — Appointments` : "Appointments"}</h1>
         {(branding?.poweredBy.show ?? true) && (
-          <span className="text-[10px] uppercase tracking-wider text-white/40">{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
+          <span className="text-[10px] uppercase tracking-wider" style={s.faint}>{branding?.poweredBy.label ?? "Powered by MogulForge"}</span>
         )}
       </div>
       {appointments.length === 0 ? (
-        <div className={`${box} text-sm text-white/50`}>No appointments scheduled.</div>
+        <div className="p-5 text-sm" style={{ ...s.card, ...s.muted }}>No appointments scheduled.</div>
       ) : (
         <div className="space-y-2">
           {appointments.map((appointment) => {
             const start = new Date(appointment.scheduledStart);
             return (
-              <div key={appointment.id} className={`${box} flex flex-wrap items-center gap-x-4 gap-y-1 py-3`}>
+              <div key={appointment.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-5 py-3" style={s.card}>
                 <div className="min-w-28">
                   <p className="text-sm font-bold">{start.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
-                  <p className="text-xs text-white/50">{start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</p>
+                  <p className="text-xs" style={s.muted}>{start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</p>
                 </div>
                 <div className="flex-1">
                   <p className="text-sm capitalize">{appointment.appointmentType.replace(/_/g, " ")}</p>
-                  {appointment.address && <p className="text-xs text-white/50">{appointment.address}</p>}
+                  {appointment.address && <p className="text-xs" style={s.muted}>{appointment.address}</p>}
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLES[appointment.status] ?? "bg-white/10 text-white/70"}`}>
+                <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider" style={statusStyle(appointment.status)}>
                   {appointment.status.replace(/_/g, " ")}
                 </span>
               </div>

@@ -1,6 +1,7 @@
 import "server-only";
 import { getEntitlement, getOrganizationById, updateOrganization, type Organization } from "./tenant";
 import { isBrandingLevel, isHexColor, resolveBranding, type EffectiveBranding } from "./branding-core";
+import { normalizeEmbedTheme, type EmbedTheme } from "./embed/theme-core";
 
 /**
  * Server-side branding resolution + updates. The effective branding an org's
@@ -26,6 +27,8 @@ export type EmbedBranding = {
   logoUrl: string | null;
   primaryColor: string | null;
   poweredBy: { show: boolean; label: string };
+  /** Org-default embed theme (per-mount overrides are merged client-side). */
+  theme: EmbedTheme;
 };
 
 export async function getEmbedBranding(org: Organization): Promise<EmbedBranding> {
@@ -35,6 +38,7 @@ export async function getEmbedBranding(org: Organization): Promise<EmbedBranding
     logoUrl: branding.logoUrl,
     primaryColor: branding.primaryColor,
     poweredBy: branding.poweredBy,
+    theme: normalizeEmbedTheme(org.embedTheme),
   };
 }
 

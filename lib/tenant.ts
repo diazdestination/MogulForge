@@ -32,6 +32,8 @@ export type Organization = {
   emailSenderName: string | null;
   smsSenderName: string | null;
   poweredByLabel: string | null;
+  /** Org-default embed theme (normalized on read by lib/embed/theme-core). */
+  embedTheme: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -85,6 +87,7 @@ function mapOrg(row: any): Organization {
     emailSenderName: row.email_sender_name ?? null,
     smsSenderName: row.sms_sender_name ?? null,
     poweredByLabel: row.powered_by_label ?? null,
+    embedTheme: row.embed_theme ?? {},
     createdAt: row.created_at,
   };
 }
@@ -104,7 +107,7 @@ export async function listOrganizations(): Promise<(Organization & { memberCount
 
 export async function updateOrganization(
   organizationId: string,
-  patch: Partial<Pick<Organization, "name" | "industry" | "timezone" | "plan" | "status" | "brandPrimaryColor" | "brandSecondaryColor" | "logoUrl" | "allowedOrigins" | "usageLimits" | "brandingLevel" | "displayName" | "portalTitle" | "loginTitle" | "supportEmail" | "supportPhone" | "emailSenderName" | "smsSenderName" | "poweredByLabel">>,
+  patch: Partial<Pick<Organization, "name" | "industry" | "timezone" | "plan" | "status" | "brandPrimaryColor" | "brandSecondaryColor" | "logoUrl" | "allowedOrigins" | "usageLimits" | "brandingLevel" | "displayName" | "portalTitle" | "loginTitle" | "supportEmail" | "supportPhone" | "emailSenderName" | "smsSenderName" | "poweredByLabel" | "embedTheme">>,
 ): Promise<Organization | null> {
   const columns: Record<string, unknown> = {};
   if (patch.name !== undefined) columns.name = patch.name;
@@ -126,6 +129,7 @@ export async function updateOrganization(
   if (patch.emailSenderName !== undefined) columns.email_sender_name = patch.emailSenderName;
   if (patch.smsSenderName !== undefined) columns.sms_sender_name = patch.smsSenderName;
   if (patch.poweredByLabel !== undefined) columns.powered_by_label = patch.poweredByLabel;
+  if (patch.embedTheme !== undefined) columns.embed_theme = JSON.stringify(patch.embedTheme);
   const keys = Object.keys(columns);
   if (keys.length === 0) return getOrganizationById(organizationId);
   const sets = keys.map((key, i) => `${key} = $${i + 2}`).join(", ");

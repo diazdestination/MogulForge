@@ -190,6 +190,34 @@ $token = json_decode($resp, true)["data"]["token"];
             Modules: <code>dashboard</code>, <code>leads</code>, <code>appointments</code>, <code>lead_form</code>. Tokens expire — re-issue on
             page load rather than caching them.
           </p>
+          <h3 className={h3}>3 · Theming</h3>
+          <p className="mt-3 text-sm text-white/60">
+            Embeds render with your org&apos;s default theme, set under <span className="text-white">Integrations → Embeds</span> (light/dark
+            mode, accent color, background, corner radius, logo — with a live preview). Any mount can override those defaults with a{" "}
+            <code>theme</code> option:
+          </p>
+          <pre className={code}>{`window.RevenueRescue.mount(el, {
+  token: token,
+  module: "lead_form",
+  theme: {
+    mode: "light",              // "light" | "dark"
+    accentColor: "#0e7490",     // hex only
+    backgroundColor: "#f8fafc", // hex only
+    radius: "md",               // "none" | "sm" | "md" | "lg" | "xl"
+    logoUrl: "https://www.yoursite.com/logo.svg" // https only
+  }
+});
+
+<!-- or declaratively -->
+<div data-rr-embed="lead_form" data-rr-token="TOKEN"
+     data-rr-mode="light" data-rr-accent="#0e7490"
+     data-rr-background="#f8fafc" data-rr-radius="md"
+     data-rr-logo="https://www.yoursite.com/logo.svg"></div>`}</pre>
+          <p className="mt-3 text-sm text-white/60">
+            Theme values are strictly validated on both sides of the iframe — colors must be hex, radius one of the listed keywords, and
+            logos https URLs. Anything else is silently dropped, so the theme channel can never inject arbitrary CSS or scripts into the
+            embed. Omitted keys fall back to your saved org defaults.
+          </p>
         </section>
 
         <section className={section}>

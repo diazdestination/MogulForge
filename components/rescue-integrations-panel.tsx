@@ -4,6 +4,8 @@ import type { ApiScope } from "@/lib/public-api/scopes";
 import { API_SCOPE_DESCRIPTIONS } from "@/lib/public-api/scopes";
 import { RescueWebhooksSection } from "@/components/rescue-webhooks-section";
 import { RescueCrmSection } from "@/components/rescue-crm-section";
+import { embedStyles } from "@/components/embed/embed-branding";
+import { DEFAULT_EMBED_THEME, EMBED_THEME_MODES, EMBED_THEME_RADII, normalizeEmbedTheme, type EmbedTheme } from "@/lib/embed/theme-core";
 
 export const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-6";
 export const input = "rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white";
@@ -313,6 +315,8 @@ function EmbedSection({ orgId }: { orgId: string }) {
         {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
       </div>
 
+      <EmbedThemeEditor orgId={orgId} />
+
       <div className={box}>
         <p className="text-sm font-bold">How embedding works</p>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-white/60">
@@ -338,6 +342,173 @@ Authorization: Bearer rrk_...
           </a>
           .
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** Org-default embed theme editor with a live widget preview. */
+function EmbedThemeEditor({ orgId }: { orgId: string }) {
+  const [theme, setTheme] = useState<EmbedTheme>(DEFAULT_EMBED_THEME);
+  const [status, setStatus] = useState<"loading" | "ready" | "saving">("loading");
+  const [error, setError] = useState("");
+  const [savedAt, setSavedAt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/orgs/${orgId}/integrations/embed-theme`, { cache: "no-store" })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (cancelled) return;
+        if (ok) setTheme(normalizeEmbedTheme(body.theme));
+        else setError(body?.error ?? "Could not load the embed theme.");
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError("Could not load the embed theme.");
+          setStatus("ready");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
+  async function save() {
+    setStatus("saving");
+    setError("");
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/integrations/embed-theme`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ theme }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(body?.error ?? "Could not save the theme.");
+        return;
+      }
+      setTheme(normalizeEmbedTheme(body.theme));
+      setSavedAt((n) => n + 1);
+    } finally {
+      setStatus("ready");
+    }
+  }
+
+  const set = (patch: Partial<EmbedTheme>) => setTheme((t) => ({ ...t, ...patch }));
+  const preview = embedStyles(theme, null);
+
+  return (
+    <div className={box}>
+      <p className="text-sm font-bold">Widget & dashboard theme</p>
+      <p className="mt-1 text-xs text-white/50">
+        Default look for your embedded modules on client sites — light or dark, accent color, corner radius, and an optional logo. Each
+        mount can still override these via loader options (see the docs below).
+      </p>
+      <div className="mt-4 grid gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <label className="flex flex-col gap-1 text-xs text-white/60">
+              Mode
+              <select className={input} value={theme.mode} onChange={(e) => set({ mode: e.target.value as EmbedTheme["mode"] })}>
+                {EMBED_THEME_MODES.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-white/60">
+              Corner radius
+              <select className={input} value={theme.radius} onChange={(e) => set({ radius: e.target.value as EmbedTheme["radius"] })}>
+                {EMBED_THEME_RADII.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex flex-col gap-1 text-xs text-white/60">
+              Accent color
+              <span className="flex items-center gap-2">
+                <input
+                  type="color"
+                  aria-label="Accent color picker"
+                  className="h-9 w-10 cursor-pointer rounded border border-white/15 bg-black/40"
+                  value={theme.accentColor ?? "#c8f31d"}
+                  onChange={(e) => set({ accentColor: e.target.value })}
+                />
+                <input
+                  className={`${input} w-28 font-mono`}
+                  placeholder="inherit"
+                  value={theme.accentColor ?? ""}
+                  onChange={(e) => set({ accentColor: e.target.value || null })}
+                />
+              </span>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-white/60">
+              Background color
+              <span className="flex items-center gap-2">
+                <input
+                  type="color"
+                  aria-label="Background color picker"
+                  className="h-9 w-10 cursor-pointer rounded border border-white/15 bg-black/40"
+                  value={theme.backgroundColor ?? (theme.mode === "dark" ? "#0b0e11" : "#ffffff")}
+                  onChange={(e) => set({ backgroundColor: e.target.value })}
+                />
+                <input
+                  className={`${input} w-28 font-mono`}
+                  placeholder="default"
+                  value={theme.backgroundColor ?? ""}
+                  onChange={(e) => set({ backgroundColor: e.target.value || null })}
+                />
+              </span>
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-xs text-white/60">
+            Logo URL (optional, https)
+            <input
+              className={`${input} w-full`}
+              placeholder="https://www.yoursite.com/logo.svg"
+              value={theme.logoUrl ?? ""}
+              onChange={(e) => set({ logoUrl: e.target.value || null })}
+            />
+          </label>
+          <div className="flex items-center gap-3">
+            <button className={btn} onClick={save} disabled={status !== "ready"}>
+              {status === "saving" ? "Saving…" : "Save theme"}
+            </button>
+            <button className={btnGhost} onClick={() => setTheme(DEFAULT_EMBED_THEME)} disabled={status !== "ready"}>
+              Reset to defaults
+            </button>
+            {savedAt > 0 && status === "ready" && !error && <span className="text-xs text-forge-lime">Saved.</span>}
+          </div>
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <p className="text-[11px] text-white/40">
+            Colors must be hex values; logos must be https URLs. Invalid values are dropped — embeds never accept arbitrary CSS.
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-white/40">Live preview — lead widget</p>
+          <div className="mt-2 overflow-hidden rounded-xl border border-white/10">
+            <div className="space-y-3 p-5" style={preview.root}>
+              <div className="flex items-center gap-2.5">
+                {theme.logoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- client-provided preview logo
+                  <img src={theme.logoUrl} alt="" className="h-6 w-auto" />
+                )}
+                <p className="text-sm font-bold">Request a free estimate</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>First name</span></div>
+                <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>Last name</span></div>
+              </div>
+              <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>Email</span></div>
+              <div className="w-full px-4 py-2.5 text-center text-sm font-bold" style={preview.accentSolid}>Get my estimate</div>
+              <p className="text-center text-[10px] uppercase tracking-wider" style={preview.faint}>Powered by MogulForge Revenue Rescue</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
