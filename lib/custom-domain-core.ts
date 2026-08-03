@@ -1,10 +1,13 @@
 /**
  * Custom-domain validation + DNS/activation rules — pure module (unit-testable).
  *
- * MogulForge stores and verifies domain requests; actual traffic routing and
- * SSL issuance for custom domains are manual/platform-dependent (documented in
- * the admin UI). Activation is gated: never before verification, and a domain
- * can only be active for one organization at a time.
+ * MogulForge stores and verifies domain requests. Once a domain is ACTIVE the
+ * app routes it live: requests whose Host header matches an active domain
+ * resolve to the owning org and render its branded portal/login. SSL
+ * certificates are provisioned by the hosting platform (on Replit, by adding
+ * the domain to the deployment) — ssl_status is confirmed from real HTTPS
+ * traffic, never assumed. Activation is gated: never before verification, and
+ * a domain can only be active for one organization at a time.
  */
 
 export const DOMAIN_STATUSES = ["pending_dns", "verified", "active", "removed"] as const;
@@ -63,7 +66,7 @@ export function requiredDnsRecords(domain: string, verificationToken: string, cn
       type: "CNAME",
       name: domain,
       value: cnameTarget,
-      purpose: "Points the domain at your MogulForge portal (routing/SSL are completed manually by MogulForge after activation).",
+      purpose: "Points the domain at your MogulForge portal. Routing goes live automatically once the domain is activated; SSL certificates are provisioned by the hosting platform.",
     },
   ];
 }
@@ -72,6 +75,43 @@ export function requiredDnsRecords(domain: string, verificationToken: string, cn
 export function txtRecordsContainToken(records: string[][], verificationToken: string): boolean {
   const expected = `mogulforge-verify=${verificationToken}`;
   return records.some((chunks) => chunks.join("").trim() === expected);
+}
+
+/**
+ * Normalizes a raw Host / X-Forwarded-Host header value to a bare lowercase
+ * hostname (first value if comma-separated, port stripped), or null when the
+ * header is missing or an address literal that can never be a custom domain.
+ */
+export function normalizeHostHeader(hostHeader: string | null | undefined): string | null {
+  const raw = (hostHeader ?? "").split(",")[0].trim().toLowerCase();
+  if (!raw) return null;
+  if (raw.startsWith("[")) return null; // IPv6 literal
+  const host = raw.split(":")[0].replace(/\.+$/, "");
+  return host || null;
+}
+
+/** Platform hostnames from env: Replit domains + the CNAME target itself. */
+export function platformHostsFromEnv(env: Record<string, string | undefined>): string[] {
+  return [
+    ...(env.REPLIT_DOMAINS ?? "").split(","),
+    env.REPLIT_DEV_DOMAIN ?? "",
+    env.CUSTOM_DOMAIN_CNAME_TARGET ?? "",
+  ]
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * True when the request host is the platform's own host (never a client's
+ * custom domain): localhost/loopback, Replit-owned domains, or one of the
+ * configured platform hostnames.
+ */
+export function isPlatformHost(host: string, platformHosts: string[]): boolean {
+  const h = host.toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1") return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true; // raw IPs are never custom domains
+  if (h.endsWith(".replit.dev") || h.endsWith(".replit.app") || h.endsWith(".repl.co") || h.endsWith(".replit.com")) return true;
+  return platformHosts.some((p) => p === h);
 }
 
 export type ActivationCheckInput = {

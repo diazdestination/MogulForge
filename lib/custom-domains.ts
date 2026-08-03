@@ -14,9 +14,12 @@ import {
 } from "./custom-domain-core";
 
 /**
- * Custom-domain records: request → DNS verification → activation.
- * Traffic routing + SSL issuance are manual/platform-dependent — this module
- * stores state and enforces the gates (no activation until verified + unique).
+ * Custom-domain records: request → DNS verification → activation → live routing.
+ * Active domains are routed by the app itself (host-header lookup via
+ * lib/portal-host.ts); SSL certificates come from the hosting platform (add
+ * the domain to the Replit deployment) and ssl_status flips to 'issued' only
+ * when a real HTTPS request is observed on the domain. This module stores
+ * state and enforces the gates (no activation until verified + unique).
  */
 
 export type CustomDomain = {
@@ -78,6 +81,30 @@ export async function listAllCustomDomains(): Promise<(CustomDomain & { organiza
      WHERE d.status <> 'removed' ORDER BY d.created_at DESC`,
   );
   return rows.map((row) => ({ ...mapDomain(row), organizationName: row.organization_name }));
+}
+
+/**
+ * Host-header routing lookup: only ACTIVE domains ever resolve. Verified-but-
+ * not-activated, pending, and removed domains return null (they never route).
+ */
+export async function findActiveCustomDomainByHost(host: string): Promise<CustomDomain | null> {
+  const { rows } = await getPool().query(
+    "SELECT * FROM custom_domains WHERE lower(domain) = $1 AND status = 'active' LIMIT 1",
+    [host.toLowerCase()],
+  );
+  return rows[0] ? mapDomain(rows[0]) : null;
+}
+
+/**
+ * Records SSL as issued from observed traffic: a real HTTPS request arriving
+ * on the active domain proves the platform certificate is live. No-op unless
+ * the domain is still active and not already marked issued.
+ */
+export async function markDomainSslIssuedFromTraffic(domainId: string): Promise<void> {
+  await getPool().query(
+    "UPDATE custom_domains SET ssl_status = 'issued', updated_at = now() WHERE id = $1 AND status = 'active' AND ssl_status <> 'issued'",
+    [domainId],
+  );
 }
 
 export class DomainRequestError extends Error {
@@ -158,8 +185,10 @@ export async function verifyCustomDomain(organizationId: string, domainId: strin
 
 /**
  * Activates a verified domain. Gated: refuses unverified domains and domains
- * already active for another org. Routing/SSL completion remains a manual,
- * platform-dependent step (ssl_status moves to 'pending' for the ops runbook).
+ * already active for another org. Activation makes in-app routing live
+ * immediately; ssl_status moves to 'pending' until the first HTTPS request is
+ * observed on the domain (certificates are provisioned by adding the domain
+ * to the Replit deployment — see the runbook in replit.md).
  */
 export async function activateCustomDomain(organizationId: string, domainId: string): Promise<{ ok: boolean; reason: string | null; domain: CustomDomain | null }> {
   const record = await getCustomDomain(organizationId, domainId);

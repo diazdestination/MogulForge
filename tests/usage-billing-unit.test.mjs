@@ -29,6 +29,9 @@ import {
   requiredDnsRecords,
   txtRecordsContainToken,
   canActivateDomain,
+  normalizeHostHeader,
+  platformHostsFromEnv,
+  isPlatformHost,
 } from "../lib/custom-domain-core.ts";
 
 // ---------------------------------------------------------------------------
@@ -222,4 +225,34 @@ test("canActivateDomain requires verification and uniqueness", () => {
   assert.equal(canActivateDomain({ status: "active", domain: "a.com" }, []).ok, false);
   assert.equal(canActivateDomain({ status: "verified", domain: "a.com" }, ["A.COM"]).ok, false); // case-insensitive clash
   assert.equal(canActivateDomain({ status: "verified", domain: "a.com" }, ["b.com"]).ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// Custom-domain host routing (host-header normalization + platform detection)
+// ---------------------------------------------------------------------------
+
+test("normalizeHostHeader lowercases, strips port, and rejects literals", () => {
+  assert.equal(normalizeHostHeader("Portal.Acme.COM:443"), "portal.acme.com");
+  assert.equal(normalizeHostHeader(" portal.acme.com , other.example.com"), "portal.acme.com");
+  assert.equal(normalizeHostHeader("portal.acme.com."), "portal.acme.com");
+  assert.equal(normalizeHostHeader("[::1]:5000"), null);
+  assert.equal(normalizeHostHeader(""), null);
+  assert.equal(normalizeHostHeader(null), null);
+});
+
+test("isPlatformHost recognizes platform hosts and never treats them as custom domains", () => {
+  const platform = platformHostsFromEnv({
+    REPLIT_DOMAINS: "My-App.Replit.app, staging.example.com",
+    REPLIT_DEV_DOMAIN: "abc.picard.replit.dev",
+    CUSTOM_DOMAIN_CNAME_TARGET: "portal-target.mogulforge.com",
+  });
+  for (const host of [
+    "localhost", "sub.localhost", "127.0.0.1", "10.0.0.5", "::1",
+    "my-app.replit.app", "abc.picard.replit.dev", "anything.replit.dev",
+    "staging.example.com", "portal-target.mogulforge.com",
+  ]) {
+    assert.equal(isPlatformHost(host, platform), true, host);
+  }
+  assert.equal(isPlatformHost("portal.acme.com", platform), false);
+  assert.equal(isPlatformHost("portal.mogulforge.com", platform), false);
 });

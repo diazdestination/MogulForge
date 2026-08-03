@@ -8,3 +8,4 @@
 - [Per-org theming](per-org-theming.md) — Tailwind colors are static build-time hex; org branding accents must be inline styles, never CSS vars or utility classes.
 - [Stripe connector credential shape](stripe-connector-credentials.md) — connection settings use `secret`/`publishable`, not `secret_key`; getClient/proxyFetch don't work, fetch creds via connection API.
 - [Embed dev testing](embed-dev-testing.md) — to view token-gated /embed/* pages locally, allow-list the dev origin and mint the token for it; hung HTTP tests can saturate the dev server's PG pool (restart workflow).
+- [Custom-domain routing](custom-domain-routing.md) — middleware stays DB-free (rewrite to a dynamic page for lookups); undici fetch strips spoofed Host headers, use node:http in tests.
