@@ -4,6 +4,7 @@ import { visibilityInputSchema, type VisibilityReport } from "@/lib/visibility-s
 import { crawlSite } from "@/lib/visibility-crawler";
 import { scoreCategories, overallScore, fallbackReport } from "@/lib/visibility-score";
 import { getPool } from "@/lib/db";
+import { sendLeadEmails } from "@/lib/lead-emails";
 
 async function saveReport(url: string, email: string, report: VisibilityReport): Promise<string | null> {
   try {
@@ -11,7 +12,13 @@ async function saveReport(url: string, email: string, report: VisibilityReport):
       "INSERT INTO visibility_reports (url, email, score, report) VALUES ($1, $2, $3, $4) RETURNING id",
       [url, email, report.score, JSON.stringify(report)],
     );
-    return rows[0]?.id ?? null;
+    const reportId: string | null = rows[0]?.id ?? null;
+    if (reportId) {
+      // sendLeadEmails never throws — email failures are logged and must not
+      // break the scan response.
+      await sendLeadEmails({ reportId, email, url, score: report.score, summary: report.summary });
+    }
+    return reportId;
   } catch (error) {
     console.error("Failed to save visibility report", error);
     return null;
