@@ -199,39 +199,125 @@ export type AppliedPlanChange = { organizationId: string; fromPlanId: string; to
  * audit-logs each application. Idempotent — applied rows have their pending
  * columns cleared, so re-runs are no-ops. Safe to call from cron, the in-app
  * timer, and lazily from page loads.
+ *
+ * The org's billing adapter is notified (changePlan) at application time —
+ * not at scheduling time. When the provider call fails, the pending change is
+ * left intact so the next pass retries it, and the failure is audit-logged.
  */
 export async function applyDuePendingPlanChanges(now: Date = new Date(), organizationId?: string): Promise<AppliedPlanChange[]> {
+  const pool = getPool();
   const params: unknown[] = [now.toISOString()];
   if (organizationId) params.push(organizationId);
-  const { rows } = await getPool().query(
-    `UPDATE org_subscriptions s
-     SET plan_id = due.to_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL, pending_plan_reminder_sent_at = NULL, updated_at = now()
-     FROM (
-       SELECT organization_id, plan_id AS from_plan_id, pending_plan_id AS to_plan_id, pending_plan_effective_at
-       FROM org_subscriptions
-       WHERE pending_plan_id IS NOT NULL AND pending_plan_effective_at <= $1
-         ${organizationId ? "AND organization_id = $2" : ""}
-       FOR UPDATE
-     ) due
-     WHERE s.organization_id = due.organization_id
-     RETURNING due.organization_id, due.from_plan_id, due.to_plan_id, due.pending_plan_effective_at`,
+  const { rows: due } = await pool.query(
+    `SELECT organization_id
+     FROM org_subscriptions
+     WHERE pending_plan_id IS NOT NULL AND pending_plan_effective_at <= $1
+       ${organizationId ? "AND organization_id = $2" : ""}`,
     params,
   );
-  const applied: AppliedPlanChange[] = rows.map((row) => ({
-    organizationId: row.organization_id,
-    fromPlanId: row.from_plan_id,
-    toPlanId: row.to_plan_id,
-    effectiveAt: new Date(row.pending_plan_effective_at).toISOString(),
-  }));
+  if (due.length === 0) return [];
+
+  const { getBillingAdapter } = await import("./billing");
   const { logAudit } = await import("./audit");
-  for (const change of applied) {
+  const applied: AppliedPlanChange[] = [];
+  const failures: Array<Record<string, unknown> & { organizationId: string }> = [];
+
+  for (const candidate of due) {
+    const client = await pool.connect();
+    let change: AppliedPlanChange | null = null;
+    try {
+      await client.query("BEGIN");
+      // Claim the row before contacting the provider: FOR UPDATE SKIP LOCKED
+      // guarantees exactly one concurrent runner (cron, in-app timer, lazy
+      // page-load pass) processes a given pending change — the others skip it.
+      const { rows } = await client.query(
+        `SELECT organization_id, plan_id AS from_plan_id, pending_plan_id AS to_plan_id,
+                pending_plan_effective_at, billing_provider, billing_ref
+         FROM org_subscriptions
+         WHERE organization_id = $1 AND pending_plan_id IS NOT NULL AND pending_plan_effective_at <= $2
+         FOR UPDATE SKIP LOCKED`,
+        [candidate.organization_id, now.toISOString()],
+      );
+      const row = rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        continue;
+      }
+      change = {
+        organizationId: row.organization_id,
+        fromPlanId: row.from_plan_id,
+        toPlanId: row.to_plan_id,
+        effectiveAt: new Date(row.pending_plan_effective_at).toISOString(),
+      };
+
+      // Notify the provider while holding the claim: only a successful
+      // provider-side change may clear the pending columns. Failures roll
+      // back, keeping the row pending for retry on the next pass.
+      const adapter = getBillingAdapter(row.billing_provider);
+      let result: { ok: boolean; providerRef: string | null; note: string };
+      try {
+        result = await adapter.changePlan({
+          organizationId: change.organizationId,
+          billingRef: row.billing_ref ?? null,
+          fromPlanId: change.fromPlanId,
+          toPlanId: change.toPlanId,
+        });
+      } catch (error) {
+        result = { ok: false, providerRef: null, note: error instanceof Error ? error.message : String(error) };
+      }
+      if (!result.ok) {
+        await client.query("ROLLBACK");
+        failures.push({
+          organizationId: change.organizationId,
+          planId: change.toPlanId,
+          previousPlanId: change.fromPlanId,
+          effectiveAt: change.effectiveAt,
+          billingProvider: adapter.provider,
+          billingNote: result.note,
+        });
+        continue;
+      }
+
+      await client.query(
+        `UPDATE org_subscriptions
+         SET plan_id = pending_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL,
+             pending_plan_reminder_sent_at = NULL,
+             billing_ref = COALESCE($2, billing_ref), updated_at = now()
+         WHERE organization_id = $1`,
+        [change.organizationId, result.providerRef],
+      );
+      await client.query("COMMIT");
+      applied.push(change);
+      await logAudit({
+        organizationId: change.organizationId,
+        actorLabel: "system",
+        action: "subscription.scheduled_change_applied",
+        targetType: "org_subscription",
+        targetId: change.organizationId,
+        metadata: {
+          planId: change.toPlanId,
+          previousPlanId: change.fromPlanId,
+          effectiveAt: change.effectiveAt,
+          billingProvider: adapter.provider,
+          billingNote: result.note,
+        },
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("Failed to apply scheduled plan change", candidate.organization_id, error);
+    } finally {
+      client.release();
+    }
+  }
+
+  for (const { organizationId: failedOrgId, ...metadata } of failures) {
     await logAudit({
-      organizationId: change.organizationId,
+      organizationId: failedOrgId,
       actorLabel: "system",
-      action: "subscription.scheduled_change_applied",
+      action: "subscription.scheduled_change_failed",
       targetType: "org_subscription",
-      targetId: change.organizationId,
-      metadata: { planId: change.toPlanId, previousPlanId: change.fromPlanId, effectiveAt: change.effectiveAt },
+      targetId: failedOrgId,
+      metadata,
     });
   }
   return applied;
