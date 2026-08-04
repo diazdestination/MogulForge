@@ -68,7 +68,10 @@ test("cron route rejects calls without the secret", async () => {
   assert.equal(res.status, 401);
 });
 
-test("retention pass deletes old rows and keeps recent ones (failures kept longer)", async () => {
+test("retention pass deletes old rows, keeps recent ones, and records heartbeat", async () => {
+  // Note the time just before triggering so we can assert the heartbeat is fresh.
+  const before = new Date();
+
   const res = await fetch(`${BASE}/api/cron/crm-delivery-cleanup`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
@@ -85,4 +88,12 @@ test("retention pass deletes old rows and keeps recent ones (failures kept longe
   assert.ok(remaining.has(state.freshSucceeded), "recent succeeded row must survive");
   assert.ok(remaining.has(state.midFailed), "failed row within 90d must survive so it can be retried");
   assert.ok(remaining.has(state.freshFailed), "recent failed row must survive");
+
+  // The external-auth path must record a heartbeat row in cron_heartbeats.
+  const { rows: hbRows } = await db.query(
+    `SELECT last_success_at FROM cron_heartbeats WHERE job = 'crm-delivery-cleanup'`,
+  );
+  assert.ok(hbRows.length === 1, "cron_heartbeats row for 'crm-delivery-cleanup' must exist after a successful external call");
+  const lastSuccess = new Date(hbRows[0].last_success_at);
+  assert.ok(lastSuccess >= before, `heartbeat timestamp (${lastSuccess.toISOString()}) must be at or after the call time (${before.toISOString()})`);
 });

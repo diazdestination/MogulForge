@@ -216,11 +216,15 @@ test("crawl: bounded whole-site crawl against a public URL stores a per-page rep
   assert.ok(root?.ok, `root page should be reachable: ${JSON.stringify(root)}`);
 });
 
-test("cron site-health: requires auth, then reports counts", async () => {
+test("cron site-health: requires auth, then reports counts and records heartbeat", async () => {
   const anon = await request("/api/cron/site-health", { method: "POST" });
   assert.equal(anon.status, 401);
 
   assert.ok(process.env.CRON_SECRET, "CRON_SECRET must be set for tests");
+
+  // Note the time just before triggering so we can assert the heartbeat is fresh.
+  const before = new Date();
+
   const authed = await request("/api/cron/site-health", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
@@ -229,4 +233,12 @@ test("cron site-health: requires auth, then reports counts", async () => {
   assert.equal(typeof authed.json.organizations, "number");
   // Our test org has no analytics scopes granted, so it must not be pulled.
   assert.equal(typeof authed.json.snapshotsRefreshed, "number");
+
+  // The external-auth path must record a heartbeat row in cron_heartbeats.
+  const { rows } = await db.query(
+    `SELECT last_success_at FROM cron_heartbeats WHERE job = 'site-health'`,
+  );
+  assert.ok(rows.length === 1, "cron_heartbeats row for 'site-health' must exist after a successful external call");
+  const lastSuccess = new Date(rows[0].last_success_at);
+  assert.ok(lastSuccess >= before, `heartbeat timestamp (${lastSuccess.toISOString()}) must be at or after the call time (${before.toISOString()})`);
 });
