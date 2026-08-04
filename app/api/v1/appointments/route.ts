@@ -5,6 +5,7 @@ import { guardV1, listResponse, parsePagination, PublicApiError, readV1Json } fr
 import { withIdempotency } from "@/lib/public-api/idempotency";
 import { isAppointmentStatus, isAppointmentType } from "@/lib/rescue-engage/calendar-adapters";
 import { createAppointment, getLeadEngagement, listAppointments } from "@/lib/rescue-engage/store";
+import { pushAppointmentToCalendar } from "@/lib/calendar/sync";
 import { emitOrgEventInBackground } from "@/lib/webhooks/outgoing";
 
 export const runtime = "nodejs";
@@ -58,6 +59,8 @@ export const POST = guardV1(async (request: Request) => {
     });
     if (!appointment) throw new PublicApiError(500, "internal_error", "Appointment could not be created.");
     emitOrgEventInBackground(ctx.org.id, "appointment.created", { appointment_id: appointment.id, lead_id: leadId, source: "public_api" });
+    // Best-effort calendar push — never fails the booking.
+    void pushAppointmentToCalendar(ctx.org.id, appointment.id);
     // Email the org's saved notification addresses (Settings → Notifications).
     sendOrgAlertInBackground(
       ctx.org.id,

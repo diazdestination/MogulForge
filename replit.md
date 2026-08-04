@@ -77,11 +77,20 @@ Marketing website for MogulForge with an "AI Revenue Rescue" scan feature. Built
 - Weekly lead digest: `RESEND_API_KEY` + `LEAD_DIGEST_TO` (recipient) required; `LEAD_DIGEST_FROM` optional (defaults to `onboarding@resend.dev` until the domain is verified in Resend); `CRON_SECRET` bearer token for triggering the cron endpoints externally (see External cron below). An hourly in-app check (`instrumentation.ts`) sends the digest at most once a week and only when there are new leads.
 
 
+## Calendar sync (appointments)
+- Providers connect via workspace-level Replit connectors (`google-calendar`, `outlook`, `calendly`) through `@replit/connectors-sdk`; `lib/calendar/connections.ts` reports live connection state (30s cache, honest "not connected" on failure) and proxies authenticated API calls. Adapter statuses on /dashboard/revenue-rescue/appointments are resolved from real state (`resolveCalendarAdapters` in `lib/rescue-engage/calendar-adapters.ts`), never hardcoded.
+- Per-org config lives in org settings section `calendar` (`syncProvider`: none/google_calendar/outlook_calendar; `calendlyUrl`: must be an https calendly.com link) — editable by owners/admins from the appointments page.
+- Outbound push (`lib/calendar/sync.ts`): booking creates a Google/Outlook event (external_event_id stored on the appointment); cancel/reschedule via PATCH mirrors to the event. Push is best-effort — calendar failures never fail the appointment write.
+- Inbound pull: `runCalendarSync()` (cron + 10-min in-app timer) marks appointments cancelled/rescheduled when the external event was deleted/moved, and imports Calendly bookings (matched to leads by invitee email; unmatched invitees are skipped, cancellations mirrored).
+- Public booking link: signed stateless token (`lib/booking-token.ts`, HMAC over SESSION_SECRET, long-lived by design) → `/book/[token]` page + `POST /api/book/[token]`; bookings match/create a lead (source `booking_link`) and land in rescue_appointments with provider `booking_url`. Each org's link is shown with a copy button on the appointments page for dropping into campaign messages.
+- Tests: `tests/calendar-sync-unit.test.mjs` (booking tokens, adapter resolution, calendar settings normalization).
+
 ## External cron (webhook retries & lead digest while the app is idle)
 - Why: the app publishes as an autoscale deployment, so the in-app timers in `instrumentation.ts` only run while the process is awake. An external scheduler must hit the cron endpoints so due webhook retries and the weekly digest fire even after the app has been idle.
 - Endpoints (both accept `POST` and `GET`, auth `Authorization: Bearer $CRON_SECRET`, or a platform-admin session):
   - `/api/cron/webhook-deliveries` — retries due outgoing webhook deliveries (`{"processed": n}`)
   - `/api/cron/lead-digest` — weekly digest check (self-throttled to once a week; POST body `{"force":true}` overrides)
+  - `/api/cron/calendar-sync` — inbound calendar sync pass (external Google/Outlook cancellations & reschedules, new Calendly bookings); also runs every 10 minutes in-app while warm
 - Trigger script: `node scripts/cron/trigger.mjs` calls both endpoints against `CRON_TARGET_URL` (defaults to the production URL `https://mogulforge.replit.app`) using `CRON_SECRET`; exits non-zero on any failure.
 - Recommended setup: a Replit Scheduled Deployment running `node scripts/cron/trigger.mjs` every 5 minutes, with `CRON_SECRET` (and optionally `CRON_TARGET_URL`) available to it. Any external cron service (cron-job.org, GitHub Actions schedule, uptime pinger) works too — a simple GET to `https://mogulforge.replit.app/api/cron/webhook-deliveries` with the Bearer header is enough.
 - `CRON_SECRET` must be set as a secret on the web app (deployment) so the endpoints accept the Bearer token; without it, only admin-session calls are accepted.

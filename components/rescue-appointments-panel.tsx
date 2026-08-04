@@ -13,6 +13,14 @@ type Appointment = {
 
 type Adapter = { id: string; label: string; connected: boolean; detail: string };
 
+type CalendarInfo = {
+  syncProvider: "none" | "google_calendar" | "outlook_calendar";
+  calendlyUrl: string;
+  bookingUrl: string;
+  connections: { google: boolean; outlook: boolean; calendly: boolean };
+  canConfigure: boolean;
+};
+
 const box = "rounded-2xl border border-white/10 bg-white/[0.03] p-6";
 const input = "rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white";
 
@@ -21,6 +29,10 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
   const orgSuffix = searchParams.get("org") ? `?org=${searchParams.get("org")}` : "";
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
+  const [calendar, setCalendar] = useState<CalendarInfo | null>(null);
+  const [calForm, setCalForm] = useState({ syncProvider: "none", calendlyUrl: "" });
+  const [copied, setCopied] = useState(false);
+  const [calSaved, setCalSaved] = useState(false);
   const [leadOptions, setLeadOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [scoped, setScoped] = useState(false);
   const [error, setError] = useState("");
@@ -34,6 +46,10 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
       if (!res.ok) { setError(body?.error ?? "Could not load appointments."); return; }
       setAppointments(body.appointments);
       setAdapters(body.adapters);
+      if (body.calendar) {
+        setCalendar(body.calendar);
+        setCalForm({ syncProvider: body.calendar.syncProvider, calendlyUrl: body.calendar.calendlyUrl });
+      }
       setScoped(body.scopedToAssigned === true);
       setError("");
     } catch { setError("Could not load appointments."); }
@@ -85,6 +101,29 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
     } finally { setBusy(false); }
   }
 
+  async function saveCalendarSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setCalSaved(false);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/settings`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendar: calForm }),
+      });
+      if (!res.ok) setError((await res.json().catch(() => null))?.error ?? "Could not save calendar settings.");
+      else { setError(""); setCalSaved(true); await load(); }
+    } finally { setBusy(false); }
+  }
+
+  async function copyBookingLink() {
+    if (!calendar?.bookingUrl) return;
+    try {
+      await navigator.clipboard.writeText(calendar.bookingUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  }
+
   const upcoming = appointments.filter((a) => a.status === "requested" || a.status === "confirmed" || a.status === "rescheduled");
   const past = appointments.filter((a) => !upcoming.includes(a));
 
@@ -107,6 +146,43 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
           ))}
         </div>
       </div>
+
+      {calendar && (
+        <div className={box}>
+          <h2 className="font-display text-xl font-semibold">Booking link &amp; calendar sync</h2>
+          {calendar.bookingUrl ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <code className="max-w-full overflow-x-auto rounded-lg bg-black/40 px-3 py-2 text-xs text-white/70">{calendar.bookingUrl}</code>
+              <button type="button" onClick={() => void copyBookingLink()} className="btn-primary px-3 py-1.5 text-xs">
+                {copied ? "Copied!" : "Copy link"}
+              </button>
+              <p className="w-full text-xs text-white/45">Drop this link into campaign messages — bookings made there land in this list automatically.</p>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-white/50">Booking link unavailable.</p>
+          )}
+          {calendar.canConfigure && (
+            <form onSubmit={saveCalendarSettings} className="mt-5 flex flex-wrap items-end gap-3 border-t border-white/10 pt-4">
+              <label className="block text-xs text-white/55">Push bookings to
+                <select value={calForm.syncProvider} onChange={(e) => setCalForm({ ...calForm, syncProvider: e.target.value })} className={`${input} mt-1 block`}>
+                  <option value="none">No calendar push</option>
+                  <option value="google_calendar" disabled={!calendar.connections.google}>
+                    Google Calendar{calendar.connections.google ? "" : " (not authorized)"}
+                  </option>
+                  <option value="outlook_calendar" disabled={!calendar.connections.outlook}>
+                    Outlook Calendar{calendar.connections.outlook ? "" : " (not authorized)"}
+                  </option>
+                </select>
+              </label>
+              <label className="block flex-1 text-xs text-white/55">Calendly scheduling link
+                <input value={calForm.calendlyUrl} onChange={(e) => setCalForm({ ...calForm, calendlyUrl: e.target.value })} placeholder="https://calendly.com/your-team/estimate" className={`${input} mt-1 block w-full`} />
+              </label>
+              <button type="submit" disabled={busy} className="btn-primary px-4 py-2 text-xs disabled:opacity-40">Save</button>
+              {calSaved && <span className="text-xs text-forge-lime">Saved</span>}
+            </form>
+          )}
+        </div>
+      )}
 
       {canWrite && (
         <form onSubmit={book} className={`${box} flex flex-wrap items-end gap-3`}>

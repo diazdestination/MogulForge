@@ -41,14 +41,25 @@ export type MessagingSettings = {
   defaultBookingLink: string;
 };
 
+export const CALENDAR_SYNC_PROVIDERS = ["none", "google_calendar", "outlook_calendar"] as const;
+export type CalendarSyncProvider = (typeof CALENDAR_SYNC_PROVIDERS)[number];
+
+export type CalendarSettings = {
+  /** Which connected calendar new appointments are pushed to ("none" disables push). */
+  syncProvider: CalendarSyncProvider;
+  /** The org's public Calendly scheduling link (e.g. https://calendly.com/acme/estimate). */
+  calendlyUrl: string;
+};
+
 export type OrgSettings = {
   contact: OrgContactSettings;
   businessHours: BusinessHoursSettings;
   notifications: NotificationSettings;
   messaging: MessagingSettings;
+  calendar: CalendarSettings;
 };
 
-export const ORG_SETTINGS_SECTIONS = ["contact", "businessHours", "notifications", "messaging"] as const;
+export const ORG_SETTINGS_SECTIONS = ["contact", "businessHours", "notifications", "messaging", "calendar"] as const;
 export type OrgSettingsSection = (typeof ORG_SETTINGS_SECTIONS)[number];
 
 export const DEFAULT_ORG_SETTINGS: OrgSettings = {
@@ -56,6 +67,7 @@ export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   businessHours: { start: "08:00", end: "18:00", days: [1, 2, 3, 4, 5] },
   notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, weeklyDigest: false, notificationEmails: [] },
   messaging: { quietHoursStart: 20, quietHoursEnd: 8, defaultTone: "professional", defaultSenderName: "", defaultBookingLink: "" },
+  calendar: { syncProvider: "none", calendlyUrl: "" },
 };
 
 const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
@@ -100,6 +112,25 @@ function tone(value: unknown, fallback: CampaignTone): CampaignTone {
   return (CAMPAIGN_TONES as readonly string[]).includes(String(value)) ? (value as CampaignTone) : fallback;
 }
 
+function syncProvider(value: unknown, fallback: CalendarSyncProvider): CalendarSyncProvider {
+  return (CALENDAR_SYNC_PROVIDERS as readonly string[]).includes(String(value)) ? (value as CalendarSyncProvider) : fallback;
+}
+
+/** Calendly links must be https URLs on calendly.com (or empty to clear). */
+export function normalizeCalendlyUrl(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim().slice(0, 300);
+  if (trimmed === "") return "";
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "https:") return fallback;
+    if (!(url.hostname === "calendly.com" || url.hostname.endsWith(".calendly.com"))) return fallback;
+    return url.toString();
+  } catch {
+    return fallback;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function section(raw: unknown): Record<string, any> {
   return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -116,6 +147,7 @@ export function normalizeOrgSettings(raw: unknown, base: OrgSettings = DEFAULT_O
   const hours = section(root.businessHours);
   const notif = section(root.notifications);
   const msg = section(root.messaging);
+  const cal = section(root.calendar);
   return {
     contact: {
       contactName: str(contact.contactName, base.contact.contactName, 120),
@@ -142,6 +174,10 @@ export function normalizeOrgSettings(raw: unknown, base: OrgSettings = DEFAULT_O
       defaultTone: tone(msg.defaultTone, base.messaging.defaultTone),
       defaultSenderName: str(msg.defaultSenderName, base.messaging.defaultSenderName, 120),
       defaultBookingLink: str(msg.defaultBookingLink, base.messaging.defaultBookingLink, 300),
+    },
+    calendar: {
+      syncProvider: syncProvider(cal.syncProvider, base.calendar.syncProvider),
+      calendlyUrl: normalizeCalendlyUrl(cal.calendlyUrl, base.calendar.calendlyUrl),
     },
   };
 }

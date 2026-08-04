@@ -8,6 +8,7 @@ export async function register() {
     __leadDigestTimer?: ReturnType<typeof setInterval>;
     __webhookRetryTimer?: ReturnType<typeof setInterval>;
     __campaignFollowUpTimer?: ReturnType<typeof setInterval>;
+    __calendarSyncTimer?: ReturnType<typeof setInterval>;
   };
 
   if (!globalState.__campaignFollowUpTimer) {
@@ -31,6 +32,23 @@ export async function register() {
     globalState.__campaignFollowUpTimer.unref?.();
     // Initial pass shortly after boot so restarts don't delay overdue follow-ups.
     setTimeout(followUpTick, 20_000).unref?.();
+  }
+
+  if (!globalState.__calendarSyncTimer) {
+    const calendarTick = async () => {
+      try {
+        const { runCalendarSync } = await import("./lib/calendar/sync");
+        const result = await runCalendarSync();
+        if (result.cancelled || result.rescheduled || result.calendlyImported || result.calendlyCancelled) {
+          console.log(`Calendar sync: ${JSON.stringify(result)}`);
+        }
+      } catch (error) {
+        console.error("Calendar sync pass failed", error);
+      }
+    };
+    globalState.__calendarSyncTimer = setInterval(calendarTick, 10 * 60 * 1000);
+    globalState.__calendarSyncTimer.unref?.();
+    setTimeout(calendarTick, 30_000).unref?.();
   }
 
   if (!globalState.__webhookRetryTimer) {

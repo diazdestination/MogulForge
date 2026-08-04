@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { ApiError, guard, readJson, requireEntitlement, requireMember } from "@/lib/api-guard";
-import { isAppointmentStatus, isAppointmentType, listCalendarAdapters } from "@/lib/rescue-engage/calendar-adapters";
 import { buildAppointmentAlertEmail } from "@/lib/org-alerts-content";
 import { sendOrgAlertInBackground } from "@/lib/org-alerts";
 import { createAppointment, getLeadEngagement, listAppointments, logActivity, setLeadStage } from "@/lib/rescue-engage/store";
-import { APPOINTMENT_WRITE_ROLES, ASSIGNED_ONLY_ROLES } from "@/lib/roles";
+import { isAppointmentStatus, isAppointmentType, resolveCalendarAdapters } from "@/lib/rescue-engage/calendar-adapters";
+import { getConnectedCalendarProviders } from "@/lib/calendar/connections";
+import { pushAppointmentToCalendar } from "@/lib/calendar/sync";
+import { getOrgSettings } from "@/lib/org-settings";
+import { buildBookingUrl } from "@/lib/booking-token";
+import { APPOINTMENT_WRITE_ROLES, ASSIGNED_ONLY_ROLES, MANAGER_ROLES } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ orgId: string }> };
 
-/** Appointments list + calendar adapter status (manual is the only connected provider). */
+/** Appointments list + real calendar adapter state (live connector status + org calendar settings). */
 export const GET = guard(async (request: Request, { params }: Ctx) => {
   const { orgId } = await params;
   const { org, role, user } = await requireMember(orgId);
@@ -20,11 +24,33 @@ export const GET = guard(async (request: Request, { params }: Ctx) => {
   const url = new URL(request.url);
   const status = url.searchParams.get("status") ?? undefined;
   if (status && !isAppointmentStatus(status)) throw new ApiError(400, "Unknown status filter.");
-  const appointments = await listAppointments(org.id, {
-    assignedUserId: restricted ? user.id : undefined,
-    status: status && isAppointmentStatus(status) ? status : undefined,
+  const [appointments, connected, settings] = await Promise.all([
+    listAppointments(org.id, {
+      assignedUserId: restricted ? user.id : undefined,
+      status: status && isAppointmentStatus(status) ? status : undefined,
+    }),
+    getConnectedCalendarProviders(),
+    getOrgSettings(org.id),
+  ]);
+  const bookingUrl = buildBookingUrl(url.origin, org.id);
+  return NextResponse.json({
+    appointments,
+    adapters: resolveCalendarAdapters({
+      google: connected.google,
+      outlook: connected.outlook,
+      calendly: connected.calendly,
+      syncProvider: settings.calendar.syncProvider,
+      calendlyUrl: settings.calendar.calendlyUrl,
+      bookingUrl,
+    }),
+    calendar: {
+      ...settings.calendar,
+      bookingUrl,
+      connections: connected,
+      canConfigure: MANAGER_ROLES.includes(role),
+    },
+    scopedToAssigned: restricted,
   });
-  return NextResponse.json({ appointments, adapters: listCalendarAdapters(), scopedToAssigned: restricted });
 });
 
 /** Manual appointment booking. Sales reps can only book against their assigned leads. */
@@ -88,5 +114,7 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
       source: "Dashboard",
     }),
   );
+  // Best-effort calendar push — never fails the booking.
+  await pushAppointmentToCalendar(org.id, appointment.id);
   return NextResponse.json({ appointment }, { status: 201 });
 });

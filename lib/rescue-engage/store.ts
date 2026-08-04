@@ -786,21 +786,37 @@ export async function createAppointment(input: {
   projectDetails?: string | null;
   notes?: string | null;
   createdBy: string | null;
+  /** Where the booking originated ('manual' unless it came via a booking link or external calendar). */
+  provider?: AppointmentProvider;
+  externalEventId?: string | null;
 }): Promise<Appointment | null> {
   const { rows } = await getPool().query(
     `INSERT INTO rescue_appointments (organization_id, lead_id, campaign_id, assigned_user_id, appointment_type,
-       scheduled_start, scheduled_end, timezone, address, project_details, notes, created_by, provider, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'manual', 'requested')
+       scheduled_start, scheduled_end, timezone, address, project_details, notes, created_by, provider, external_event_id, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'requested')
      RETURNING id`,
     [
       input.organizationId, input.leadId, input.campaignId ?? null, input.assignedUserId ?? null, input.appointmentType,
       input.scheduledStart, input.scheduledEnd ?? null, input.timezone ?? null, input.address ?? null,
-      input.projectDetails ?? null, input.notes ?? null, input.createdBy,
+      input.projectDetails ?? null, input.notes ?? null, input.createdBy, input.provider ?? "manual", input.externalEventId ?? null,
     ],
   );
   return getAppointment(input.organizationId, rows[0].id);
 }
 
+/** Records the external calendar event backing an appointment (after a successful push). */
+export async function setAppointmentExternalRef(
+  organizationId: string,
+  appointmentId: string,
+  provider: AppointmentProvider,
+  externalEventId: string | null,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE rescue_appointments SET provider = $3, external_event_id = $4, updated_at = now()
+     WHERE organization_id = $1 AND id = $2`,
+    [organizationId, appointmentId, provider, externalEventId],
+  );
+}
 export async function getAppointment(organizationId: string, appointmentId: string): Promise<Appointment | null> {
   const { rows } = await getPool().query(
     `${APPOINTMENT_SELECT} WHERE a.organization_id = $1 AND a.id = $2`,
@@ -1040,4 +1056,55 @@ export async function setTaskStatus(organizationId: string, taskId: string, stat
     [organizationId, taskId, status],
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+export type SyncedAppointmentRef = {
+  id: string;
+  organizationId: string;
+  provider: AppointmentProvider;
+  externalEventId: string;
+  scheduledStart: string;
+  scheduledEnd: string | null;
+  status: AppointmentStatus;
+};
+
+/** All appointments (across orgs) backed by an external calendar event that could still change. Used by the sync cron. */
+export async function listSyncedAppointmentRefs(providers: AppointmentProvider[]): Promise<SyncedAppointmentRef[]> {
+  if (providers.length === 0) return [];
+  const { rows } = await getPool().query(
+    `SELECT id, organization_id, provider, external_event_id, scheduled_start, scheduled_end, status
+     FROM rescue_appointments
+     WHERE provider = ANY($1) AND external_event_id IS NOT NULL
+       AND status IN ('requested', 'confirmed', 'rescheduled')
+     ORDER BY scheduled_start ASC
+     LIMIT 500`,
+    [providers],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    organizationId: row.organization_id,
+    provider: row.provider,
+    externalEventId: row.external_event_id,
+    scheduledStart: row.scheduled_start,
+    scheduledEnd: row.scheduled_end,
+    status: row.status,
+  }));
+}
+
+/** Simple email match used to attach inbound Calendly/booking-page bookings to an existing lead. */
+export async function findLeadIdByEmail(organizationId: string, email: string): Promise<string | null> {
+  const { rows } = await getPool().query(
+    `SELECT id FROM rescue_leads WHERE organization_id = $1 AND lower(email) = lower($2) ORDER BY created_at DESC LIMIT 1`,
+    [organizationId, email],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** True when an external event id is already tracked for the org (dedupe for inbound sync). */
+export async function externalEventExists(organizationId: string, externalEventId: string): Promise<boolean> {
+  const { rows } = await getPool().query(
+    `SELECT 1 FROM rescue_appointments WHERE organization_id = $1 AND external_event_id = $2 LIMIT 1`,
+    [organizationId, externalEventId],
+  );
+  return rows.length > 0;
 }

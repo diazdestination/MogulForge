@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 import { classifyReply, REPLY_ROUTING, REPLY_CATEGORIES } from "../lib/rescue-engage/replies.ts";
 import { getProviderStatus, liveSendingAvailable } from "../lib/rescue-engage/providers.ts";
-import { listCalendarAdapters } from "../lib/rescue-engage/calendar-adapters.ts";
+import { resolveCalendarAdapters } from "../lib/rescue-engage/calendar-adapters.ts";
 import { parseCampaignInput, CampaignValidationError } from "../lib/rescue-engage/campaign-schema.ts";
 import { MANUAL_STAGES, PIPELINE_STAGES } from "../lib/rescue-engage/pipeline.ts";
 
@@ -103,8 +103,8 @@ test("no provider reports connected without credentials; live sending unavailabl
   }
 });
 
-test("calendar adapters: only manual is available, external providers are honest stubs", () => {
-  const adapters = listCalendarAdapters();
+test("calendar adapters: with nothing connected, only manual is available", () => {
+  const adapters = resolveCalendarAdapters({ google: false, outlook: false, calendly: false, syncProvider: "none", calendlyUrl: "", bookingUrl: "" });
   const manual = adapters.find((a) => a.id === "manual");
   assert.ok(manual?.connected, "manual scheduling must be available");
   for (const adapter of adapters.filter((a) => a.id !== "manual")) {

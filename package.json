@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@replit/connectors-sdk": "^0.4.1",
     "@types/pg": "^8.20.2",
     "lucide-react": "^0.468.0",
     "next": "16.2.12",

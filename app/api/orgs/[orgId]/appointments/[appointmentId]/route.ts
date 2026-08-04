@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ApiError, guard, readJson, requireEntitlement, requireMember } from "@/lib/api-guard";
 import { isAppointmentStatus } from "@/lib/rescue-engage/calendar-adapters";
 import { getAppointment, logActivity, updateAppointment } from "@/lib/rescue-engage/store";
+import { pushAppointmentUpdateToCalendar } from "@/lib/calendar/sync";
 import { APPOINTMENT_WRITE_ROLES, ASSIGNED_ONLY_ROLES } from "@/lib/roles";
 
 export const runtime = "nodejs";
@@ -47,6 +48,10 @@ export const PATCH = guard(async (request: Request, { params }: Ctx) => {
       title: `Appointment ${patch.status}`,
       actorUserId: user.id,
     });
+  }
+  // Mirror schedule/status changes to the backing calendar event. Best-effort.
+  if (patch.status !== undefined || patch.scheduledStart !== undefined) {
+    await pushAppointmentUpdateToCalendar(org.id, appointmentId);
   }
   return NextResponse.json({ appointment });
 });
