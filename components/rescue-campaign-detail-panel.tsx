@@ -26,6 +26,7 @@ type Preview = {
 type EnrolledLead = {
   leadId: string; firstName: string | null; lastName: string | null; score: number | null;
   status: string; pipelineStage: string; stopReason: string | null; enrolledAt: string;
+  attempts: number; lastMessageAt: string | null;
 };
 
 type DetailResponse = {
@@ -249,7 +250,7 @@ export function RescueCampaignDetailPanel({ orgId, campaignId }: { orgId: string
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="text-[10px] uppercase tracking-wider text-white/40">
-                <tr><th className="pb-2">Lead</th><th className="pb-2">Score</th><th className="pb-2">Enrollment</th><th className="pb-2">Stage</th><th className="pb-2">Enrolled</th></tr>
+                <tr><th className="pb-2">Lead</th><th className="pb-2">Score</th><th className="pb-2">Enrollment</th><th className="pb-2">Stage</th><th className="pb-2">Attempts</th><th className="pb-2">Last message</th></tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {leads.map((l) => (
@@ -262,7 +263,8 @@ export function RescueCampaignDetailPanel({ orgId, campaignId }: { orgId: string
                     <td className="py-2.5 pr-3 text-forge-lime">{l.score ?? "—"}</td>
                     <td className="py-2.5 pr-3 text-xs capitalize">{l.status}{l.stopReason ? ` (${l.stopReason})` : ""}</td>
                     <td className="py-2.5 pr-3 text-xs">{STAGE_LABELS[l.pipelineStage as PipelineStage] ?? l.pipelineStage}</td>
-                    <td className="py-2.5 text-xs text-white/45">{new Date(l.enrolledAt).toLocaleDateString()}</td>
+                    <td className="py-2.5 pr-3 text-xs">{l.attempts > 0 ? `${l.attempts} of ${data.campaign.maxAttempts}` : "—"}</td>
+                    <td className="py-2.5 text-xs text-white/45">{l.lastMessageAt ? new Date(l.lastMessageAt).toLocaleDateString() : "—"}</td>
                   </tr>
                 ))}
               </tbody>
