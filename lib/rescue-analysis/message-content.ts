@@ -211,7 +211,14 @@ export function buildTemplateDraft(type: MessageType, facts: LeadFacts, opts: Te
               ? [`Hi ${name}, ${opts.orgName} circling back on ${project}.`, "Timing shifts all the time — want us to keep it on our radar, or has anything changed?"]
               : [`Hi ${name}, this is ${opts.orgName}.`, followLine, "Is this still something you're considering?"];
       const booking = opts.bookingLink?.trim() ? `Grab a time that works for you: ${opts.bookingLink.trim()}` : null;
-      const body = [...core, booking, opts.includeOptOutLanguage ? SMS_OPT_OUT : null].filter(Boolean).join(" ");
+      const optOut = opts.includeOptOutLanguage ? SMS_OPT_OUT : null;
+      let body = [...core, booking, optOut].filter(Boolean).join(" ");
+      // Signed per-lead /book/<token> booking URLs are long; when the booking
+      // line pushes the SMS past the 480-char cap, fall back to a compact body
+      // rather than failing validation (the link and opt-out always survive).
+      if (body.length > 480 && booking) {
+        body = [`Hi ${name}, this is ${opts.orgName} about ${project}.`, booking, optOut].filter(Boolean).join(" ");
+      }
       return parseMessageContent("sms", { body });
     }
     case "email": {

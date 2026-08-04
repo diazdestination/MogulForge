@@ -436,7 +436,11 @@ test("manual booking works and moves the lead to appointment_booked", async () =
   assert.ok(list.json.appointments.some((a) => a.id === res.json.appointment.id));
   const manual = list.json.adapters.find((a) => a.id === "manual");
   assert.ok(manual.connected, "manual adapter must be available");
-  for (const adapter of list.json.adapters.filter((a) => a.id !== "manual")) {
+  // booking_url is connected whenever SESSION_SECRET can sign booking links;
+  // every other non-manual adapter must be an honest not-connected stub.
+  const bookingUrlAdapter = list.json.adapters.find((a) => a.id === "booking_url");
+  assert.equal(bookingUrlAdapter.connected, true, "booking_url must be available when SESSION_SECRET is configured");
+  for (const adapter of list.json.adapters.filter((a) => a.id !== "manual" && a.id !== "booking_url")) {
     assert.equal(adapter.connected, false, `${adapter.id} must be an honest not-connected stub`);
   }
 });
