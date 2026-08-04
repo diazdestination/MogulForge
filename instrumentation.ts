@@ -113,6 +113,15 @@ export async function register() {
       console.error("Custom-domain health pass failed", error);
     }
     try {
+      const { cleanupOldPushDeliveries } = await import("./lib/crm/deliveries");
+      const { succeededDeleted, failedDeleted } = await cleanupOldPushDeliveries();
+      if (succeededDeleted > 0 || failedDeleted > 0) {
+        console.log(`CRM delivery log cleanup: removed ${succeededDeleted} succeeded, ${failedDeleted} failed row(s)`);
+      }
+    } catch (error) {
+      console.error("CRM delivery log cleanup failed", error);
+    }
+    try {
       const { runOrgWeeklyDigests } = await import("./lib/org-alerts");
       const outcomes = await runOrgWeeklyDigests();
       const sent = outcomes.filter((o) => o.status === "sent").length;

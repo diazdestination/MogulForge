@@ -17,6 +17,11 @@ import { SITE_URL } from "../site";
 /** Consecutive push failures before a connection is flipped to 'error'. */
 export const ERROR_THRESHOLD_FAILURES = 5;
 
+/** Succeeded deliveries are kept this many days — long enough to audit recent pushes. */
+export const SUCCEEDED_RETENTION_DAYS = 30;
+/** Failed deliveries are kept longer so clients can still see and retry them. */
+export const FAILED_RETENTION_DAYS = 90;
+
 export type CrmPushDelivery = {
   id: string;
   organizationId: string;
@@ -157,6 +162,24 @@ async function notifyConnectionErrored(
   } catch (error) {
     console.error(`CRM connection error alert failed for organization ${organizationId}`, error);
   }
+}
+
+/**
+ * Retention pass: deletes succeeded deliveries older than 30 days and failed
+ * ones older than 90 days (age by last activity, so a recently retried old
+ * failure survives). Keeps the log useful without unbounded growth.
+ */
+export async function cleanupOldPushDeliveries(): Promise<{ succeededDeleted: number; failedDeleted: number }> {
+  const pool = getPool();
+  const succeeded = await pool.query(
+    `DELETE FROM crm_push_deliveries WHERE status = 'succeeded' AND updated_at < now() - make_interval(days => $1)`,
+    [SUCCEEDED_RETENTION_DAYS],
+  );
+  const failed = await pool.query(
+    `DELETE FROM crm_push_deliveries WHERE status = 'failed' AND updated_at < now() - make_interval(days => $1)`,
+    [FAILED_RETENTION_DAYS],
+  );
+  return { succeededDeleted: succeeded.rowCount ?? 0, failedDeleted: failed.rowCount ?? 0 };
 }
 
 /** Lists recent deliveries for one connection, newest first, with lead names. */
