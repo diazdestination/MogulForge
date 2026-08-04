@@ -31,6 +31,14 @@ export async function register() {
     } catch (error) {
       console.error("Weekly lead digest check failed", error);
     }
+    try {
+      const { runOrgWeeklyDigests } = await import("./lib/org-alerts");
+      const outcomes = await runOrgWeeklyDigests();
+      const sent = outcomes.filter((o) => o.status === "sent").length;
+      if (sent > 0) console.log(`Weekly org digests sent to ${sent} organization${sent === 1 ? "" : "s"}`);
+    } catch (error) {
+      console.error("Weekly org digest check failed", error);
+    }
   };
 
   globalState.__leadDigestTimer = setInterval(tick, CHECK_INTERVAL_MS);

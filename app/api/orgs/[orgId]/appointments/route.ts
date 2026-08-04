@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { ApiError, guard, readJson, requireEntitlement, requireMember } from "@/lib/api-guard";
 import { isAppointmentStatus, isAppointmentType, listCalendarAdapters } from "@/lib/rescue-engage/calendar-adapters";
+import { buildAppointmentAlertEmail } from "@/lib/org-alerts-content";
+import { sendOrgAlertInBackground } from "@/lib/org-alerts";
 import { createAppointment, getLeadEngagement, listAppointments, logActivity, setLeadStage } from "@/lib/rescue-engage/store";
 import { APPOINTMENT_WRITE_ROLES, ASSIGNED_ONLY_ROLES } from "@/lib/roles";
 
@@ -72,5 +74,19 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
     detail: `Scheduled for ${scheduledStart}`,
     actorUserId: user.id,
   });
+  // Email the org's saved notification addresses (Settings → Notifications).
+  sendOrgAlertInBackground(
+    org.id,
+    "appointmentAlerts",
+    buildAppointmentAlertEmail({
+      orgName: org.name,
+      leadName: [appointment.leadFirstName, appointment.leadLastName].filter(Boolean).join(" ") || "Unnamed lead",
+      appointmentType,
+      scheduledStart,
+      timezone: appointment.timezone,
+      address: appointment.address,
+      source: "Dashboard",
+    }),
+  );
   return NextResponse.json({ appointment }, { status: 201 });
 });

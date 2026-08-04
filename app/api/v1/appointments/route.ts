@@ -1,3 +1,5 @@
+import { buildAppointmentAlertEmail } from "@/lib/org-alerts-content";
+import { sendOrgAlertInBackground } from "@/lib/org-alerts";
 import { requireApiKey } from "@/lib/public-api/auth";
 import { guardV1, listResponse, parsePagination, PublicApiError, readV1Json } from "@/lib/public-api/http";
 import { withIdempotency } from "@/lib/public-api/idempotency";
@@ -56,6 +58,20 @@ export const POST = guardV1(async (request: Request) => {
     });
     if (!appointment) throw new PublicApiError(500, "internal_error", "Appointment could not be created.");
     emitOrgEventInBackground(ctx.org.id, "appointment.created", { appointment_id: appointment.id, lead_id: leadId, source: "public_api" });
+    // Email the org's saved notification addresses (Settings → Notifications).
+    sendOrgAlertInBackground(
+      ctx.org.id,
+      "appointmentAlerts",
+      buildAppointmentAlertEmail({
+        orgName: ctx.org.name,
+        leadName: [appointment.leadFirstName, appointment.leadLastName].filter(Boolean).join(" ") || "Unnamed lead",
+        appointmentType: rawType,
+        scheduledStart,
+        timezone: appointment.timezone,
+        address: appointment.address,
+        source: "Public API",
+      }),
+    );
     return { status: 201, body: { data: appointment }, headers: ctx.rateHeaders };
   });
 });

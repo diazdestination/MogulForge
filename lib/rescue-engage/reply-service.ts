@@ -1,5 +1,7 @@
 import "server-only";
 import { getPool } from "../db";
+import { buildHotLeadAlertEmail, buildReplyAlertEmail } from "../org-alerts-content.ts";
+import { sendOrgAlertInBackground } from "../org-alerts.ts";
 import { classifyReply, REPLY_CATEGORY_LABELS, REPLY_ROUTING, type ReplyCategory } from "./replies.ts";
 import {
   insertMessage,
@@ -142,6 +144,25 @@ export async function processInboundReply(input: {
     metadata: { category: classification.category, confidence: classification.confidence },
     actorUserId: input.actorUserId,
   });
+
+  // 6. Email the org's saved notification addresses (Settings → Notifications).
+  // Hot replies use the hot-lead toggle; other replies use the reply toggle.
+  // Fire-and-forget: an alert failure never fails reply processing.
+  const isHotReply = classification.category === "interested" || classification.category === "wants_appointment";
+  const orgRows = await getPool().query("SELECT name FROM organizations WHERE id = $1", [input.organizationId]);
+  const orgName: string = orgRows.rows[0]?.name ?? "Your organization";
+  const alertInput = {
+    orgName,
+    leadName,
+    replyBody: input.body,
+    channel: input.channel,
+    categoryLabel: REPLY_CATEGORY_LABELS[classification.category],
+  };
+  if (isHotReply) {
+    sendOrgAlertInBackground(input.organizationId, "hotLeadAlerts", buildHotLeadAlertEmail(alertInput));
+  } else {
+    sendOrgAlertInBackground(input.organizationId, "replyAlerts", buildReplyAlertEmail(alertInput));
+  }
 
   return {
     message,
