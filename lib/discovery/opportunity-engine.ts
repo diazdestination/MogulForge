@@ -142,6 +142,13 @@ export async function updateOpportunityStatus(
   return (rowCount ?? 0) > 0;
 }
 
+/**
+ * Retention: dismissed and actioned opportunity rows are kept for 90 days,
+ * then pruned. Open ("new") rows are never deleted here — only terminal-status
+ * rows that are no longer actionable and would otherwise grow without bound.
+ */
+export const OPPORTUNITY_DISMISSED_RETENTION_DAYS = 90;
+
 /** All active orgs with revenue_rescue entitlement — used by the cron job. */
 export async function listOrgsForDiscovery(): Promise<string[]> {
   const { rows } = await getPool().query(
@@ -153,4 +160,19 @@ export async function listOrgsForDiscovery(): Promise<string[]> {
        AND e.enabled = true`,
   );
   return rows.map((r) => String(r.id));
+}
+
+/**
+ * Deletes dismissed and actioned org_opportunities older than the retention
+ * window. Tenant-safe: the WHERE clause is implicitly scoped per
+ * organization_id because the table only holds org-owned rows. Idempotent.
+ */
+export async function cleanupOldDismissedOpportunities(): Promise<{ deleted: number }> {
+  const result = await getPool().query(
+    `DELETE FROM org_opportunities
+     WHERE status IN ('dismissed', 'actioned')
+       AND updated_at < now() - make_interval(days => $1)`,
+    [OPPORTUNITY_DISMISSED_RETENTION_DAYS],
+  );
+  return { deleted: result.rowCount ?? 0 };
 }
