@@ -12,8 +12,9 @@ import { getOrgSubscription, listPlanDefinitions, setOrgSubscription } from "@/l
 import { getBillingAdapter } from "@/lib/billing";
 import { getUsageStatus } from "@/lib/usage";
 import { SUBSCRIPTION_STATUSES, isSubscriptionStatus, isUsageMetric, USAGE_METRIC_LABELS, type LimitSet } from "@/lib/usage-metrics";
-import { activateCustomDomain, listCustomDomains, setDomainSslStatus, verifyCustomDomain } from "@/lib/custom-domains";
+import { activateCustomDomain, checkCustomDomain, listCustomDomains, setDomainSslStatus, verifyCustomDomain } from "@/lib/custom-domains";
 import { DOMAIN_STATUS_LABELS } from "@/lib/custom-domain-core";
+import { DomainGoLiveChecklist } from "@/components/domain-go-live-checklist";
 
 export const metadata: Metadata = { title: "Organization — Admin", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -111,9 +112,12 @@ async function domainAdminAction(formData: FormData) {
   const domainId = String(formData.get("domainId") ?? "");
   const action = String(formData.get("domainAction") ?? "");
   const actor = await actorLabel();
-  if (action === "verify" || action === "force_verify") {
-    const result = await verifyCustomDomain(orgId, domainId, { force: action === "force_verify" });
-    if (result?.verified) await logAudit({ organizationId: orgId, actorUserId: actor.userId, actorLabel: actor.label, action: action === "force_verify" ? "custom_domain.force_verified" : "custom_domain.verified", targetType: "custom_domain", targetId: domainId });
+  if (action === "verify") {
+    const result = await checkCustomDomain(orgId, domainId);
+    if (result?.newlyVerified) await logAudit({ organizationId: orgId, actorUserId: actor.userId, actorLabel: actor.label, action: "custom_domain.verified", targetType: "custom_domain", targetId: domainId });
+  } else if (action === "force_verify") {
+    const result = await verifyCustomDomain(orgId, domainId, { force: true });
+    if (result?.verified) await logAudit({ organizationId: orgId, actorUserId: actor.userId, actorLabel: actor.label, action: "custom_domain.force_verified", targetType: "custom_domain", targetId: domainId });
   } else if (action === "activate") {
     const result = await activateCustomDomain(orgId, domainId);
     if (result.ok) await logAudit({ organizationId: orgId, actorUserId: actor.userId, actorLabel: actor.label, action: "custom_domain.activated", targetType: "custom_domain", targetId: domainId });
@@ -235,14 +239,13 @@ export default async function AdminOrganizationDetailPage({ params }: { params: 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-semibold">{domain.domain}</p>
-                  <p className="mt-0.5 text-xs text-white/50">{DOMAIN_STATUS_LABELS[domain.status]} · SSL: {domain.sslStatus.replace("_", " ")}</p>
-                  {domain.lastCheckError && domain.status === "pending_dns" && <p className="mt-1 text-xs text-amber-300">{domain.lastCheckError}</p>}
+                  <p className="mt-0.5 text-xs text-white/50">{DOMAIN_STATUS_LABELS[domain.status]} · SSL: {domain.sslStatus.replace("_", " ")}{domain.lastCheckedAt && ` · last checked ${new Date(domain.lastCheckedAt).toLocaleString()}`}</p>
+                  {domain.lastCheckError && <p className="mt-1 text-xs text-amber-300">{domain.lastCheckError}</p>}
+                  <DomainGoLiveChecklist domain={domain} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {domain.status === "pending_dns" && <>
-                    <form action={domainAdminAction}><input type="hidden" name="orgId" value={org.id} /><input type="hidden" name="domainId" value={domain.id} /><input type="hidden" name="domainAction" value="verify" /><button type="submit" className="btn-secondary">Check DNS</button></form>
-                    <form action={domainAdminAction}><input type="hidden" name="orgId" value={org.id} /><input type="hidden" name="domainId" value={domain.id} /><input type="hidden" name="domainAction" value="force_verify" /><button type="submit" className="rounded-full border border-amber-400/40 px-4 py-2 text-xs font-bold text-amber-300 hover:bg-amber-400/10">Force verify</button></form>
-                  </>}
+                  <form action={domainAdminAction}><input type="hidden" name="orgId" value={org.id} /><input type="hidden" name="domainId" value={domain.id} /><input type="hidden" name="domainAction" value="verify" /><button type="submit" className="btn-secondary">{domain.status === "pending_dns" ? "Check DNS" : "Check now"}</button></form>
+                  {domain.status === "pending_dns" && <form action={domainAdminAction}><input type="hidden" name="orgId" value={org.id} /><input type="hidden" name="domainId" value={domain.id} /><input type="hidden" name="domainAction" value="force_verify" /><button type="submit" className="rounded-full border border-amber-400/40 px-4 py-2 text-xs font-bold text-amber-300 hover:bg-amber-400/10">Force verify</button></form>}
                   {domain.status === "verified" && <form action={domainAdminAction}><input type="hidden" name="orgId" value={org.id} /><input type="hidden" name="domainId" value={domain.id} /><input type="hidden" name="domainAction" value="activate" /><button type="submit" className="rounded-full border border-forge-lime/50 px-4 py-2 text-xs font-bold text-forge-lime hover:bg-forge-lime/10">Activate</button></form>}
                   {domain.status === "active" && domain.sslStatus !== "issued" && <form action={domainAdminAction}><input type="hidden" name="orgId" value={org.id} /><input type="hidden" name="domainId" value={domain.id} /><input type="hidden" name="domainAction" value="ssl_issued" /><button type="submit" className="btn-secondary">Mark SSL issued</button></form>}
                 </div>

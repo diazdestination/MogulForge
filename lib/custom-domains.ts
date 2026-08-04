@@ -1,9 +1,10 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { resolveTxt } from "node:dns/promises";
+import { resolveCname, resolveTxt } from "node:dns/promises";
 import { getPool } from "./db";
 import {
   canActivateDomain,
+  cnameMatchesTarget,
   normalizeDomain,
   requiredDnsRecords,
   txtRecordsContainToken,
@@ -181,6 +182,54 @@ export async function verifyCustomDomain(organizationId: string, domainId: strin
     [organizationId, domainId, verified, verified ? null : checkError],
   );
   return { verified, error: verified ? null : checkError, domain: mapDomain(rows[0]) };
+}
+
+export type DomainCheckResult = {
+  verified: boolean;
+  /** True only when this check flipped the domain from pending to verified. */
+  newlyVerified: boolean;
+  cnameOk: boolean;
+  message: string;
+  domain: CustomDomain;
+};
+
+/**
+ * "Check now" probe: re-runs TXT verification when the domain is still
+ * pending, and checks whether the domain's CNAME points at the platform
+ * target. Failures are recorded on the record (last_check_error), never
+ * thrown — the client can fix DNS and retry.
+ */
+export async function checkCustomDomain(organizationId: string, domainId: string): Promise<DomainCheckResult | null> {
+  const before = await getCustomDomain(organizationId, domainId);
+  if (!before || before.status === "removed") return null;
+  const verifyResult = await verifyCustomDomain(organizationId, domainId);
+  if (!verifyResult) return null;
+  let record = verifyResult.domain;
+  const newlyVerified = before.status === "pending_dns" && verifyResult.verified;
+
+  const target = cnameTarget();
+  let cnameOk = false;
+  let cnameError: string | null = null;
+  try {
+    const records = await resolveCname(record.domain);
+    cnameOk = cnameMatchesTarget(records, target);
+    if (!cnameOk) cnameError = `The CNAME record points at ${records.join(", ") || "nothing"} instead of ${target}.`;
+  } catch {
+    cnameError = `No CNAME record found for ${record.domain} yet. Add a CNAME pointing at ${target} — DNS changes can take up to an hour to propagate.`;
+  }
+
+  const combinedError = [verifyResult.verified ? null : verifyResult.error, cnameError].filter(Boolean).join(" ") || null;
+  const { rows } = await getPool().query(
+    "UPDATE custom_domains SET last_checked_at = now(), last_check_error = $3, updated_at = now() WHERE organization_id = $1 AND id = $2 RETURNING *",
+    [organizationId, domainId, combinedError],
+  );
+  if (rows[0]) record = mapDomain(rows[0]);
+
+  const message = combinedError
+    ?? (record.status === "active"
+      ? `Routing is live and the CNAME points at ${target}.`
+      : `Domain verified and the CNAME points at ${target}.`);
+  return { verified: verifyResult.verified, newlyVerified, cnameOk, message, domain: record };
 }
 
 /**

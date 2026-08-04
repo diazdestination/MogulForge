@@ -7,8 +7,9 @@ import { getMembership, getOrganizationById, getEntitlement } from "@/lib/tenant
 import { MANAGER_ROLES } from "@/lib/roles";
 import { BRANDING_LEVELS, BRANDING_LEVEL_LABELS } from "@/lib/branding-core";
 import { BrandingValidationError, resolveOrgBranding, updateOrgBranding } from "@/lib/branding";
-import { DomainRequestError, listCustomDomains, requestCustomDomain, removeCustomDomain, verifyCustomDomain } from "@/lib/custom-domains";
+import { checkCustomDomain, DomainRequestError, listCustomDomains, requestCustomDomain, removeCustomDomain } from "@/lib/custom-domains";
 import { DOMAIN_STATUS_LABELS } from "@/lib/custom-domain-core";
+import { DomainGoLiveChecklist } from "@/components/domain-go-live-checklist";
 import { logAudit } from "@/lib/audit";
 
 export const metadata: Metadata = { title: "Branding — Dashboard", robots: { index: false, follow: false } };
@@ -70,11 +71,13 @@ async function verifyDomainAction(formData: FormData) {
   const orgId = String(formData.get("orgId") ?? "");
   const user = await requireManagerAction(orgId);
   const domainId = String(formData.get("domainId") ?? "");
-  const result = await verifyCustomDomain(orgId, domainId);
-  if (result?.verified) {
+  const result = await checkCustomDomain(orgId, domainId);
+  if (result?.newlyVerified) {
     await logAudit({ organizationId: orgId, actorUserId: user.id, actorLabel: user.email, action: "custom_domain.verified", targetType: "custom_domain", targetId: domainId });
   }
-  redirect(`/dashboard/revenue-rescue/branding?org=${orgId}${result && !result.verified ? `&error=${encodeURIComponent(result.error ?? "Verification failed.")}` : ""}`);
+  if (!result) redirect(`/dashboard/revenue-rescue/branding?org=${orgId}`);
+  const param = result.verified && result.cnameOk ? "notice" : "error";
+  redirect(`/dashboard/revenue-rescue/branding?org=${orgId}&${param}=${encodeURIComponent(result.message)}`);
 }
 
 async function removeDomainAction(formData: FormData) {
@@ -87,8 +90,8 @@ async function removeDomainAction(formData: FormData) {
   redirect(`/dashboard/revenue-rescue/branding?org=${orgId}`);
 }
 
-export default async function BrandingPage({ searchParams }: { searchParams: Promise<{ org?: string; saved?: string; error?: string }> }) {
-  const { org: orgParam, saved, error } = await searchParams;
+export default async function BrandingPage({ searchParams }: { searchParams: Promise<{ org?: string; saved?: string; error?: string; notice?: string }> }) {
+  const { org: orgParam, saved, error, notice } = await searchParams;
   const ctx = await getDashboardContext(orgParam, "revenue_rescue");
   if (ctx.kind === "unauthenticated") redirect("/login");
   if (ctx.kind !== "ok") return <RescueDashboardGate ctx={ctx} />;
@@ -116,6 +119,7 @@ export default async function BrandingPage({ searchParams }: { searchParams: Pro
 
         {saved && <div className="mt-6 rounded-xl border border-forge-lime/40 bg-forge-lime/5 px-5 py-3 text-sm text-forge-lime">Branding saved.</div>}
         {error && <div className="mt-6 rounded-xl border border-red-400/40 bg-red-400/5 px-5 py-3 text-sm text-red-300">{error}</div>}
+        {notice && <div className="mt-6 rounded-xl border border-forge-lime/40 bg-forge-lime/5 px-5 py-3 text-sm text-forge-lime">{notice}</div>}
         {!canManage && <div className="mt-6 rounded-xl border border-white/15 bg-white/[.03] px-5 py-3 text-sm text-white/60">You can view these settings; only owners and admins can change them.</div>}
 
         <form action={saveBrandingAction} className="mt-8 rounded-xl border border-white/10 bg-white/[.02] p-6">
@@ -195,17 +199,16 @@ export default async function BrandingPage({ searchParams }: { searchParams: Pro
                     {DOMAIN_STATUS_LABELS[domain.status]} · SSL: {domain.sslStatus.replace("_", " ")}
                     {domain.lastCheckedAt && ` · last checked ${new Date(domain.lastCheckedAt).toLocaleString()}`}
                   </p>
-                  {domain.lastCheckError && domain.status === "pending_dns" && <p className="mt-1 text-xs text-amber-300">{domain.lastCheckError}</p>}
+                  {domain.lastCheckError && <p className="mt-1 text-xs text-amber-300">{domain.lastCheckError}</p>}
+                  <DomainGoLiveChecklist domain={domain} />
                 </div>
                 {canManage && (
                   <div className="flex gap-2">
-                    {domain.status === "pending_dns" && (
-                      <form action={verifyDomainAction}>
-                        <input type="hidden" name="orgId" value={org.id} />
-                        <input type="hidden" name="domainId" value={domain.id} />
-                        <button type="submit" className="btn-secondary">Check DNS</button>
-                      </form>
-                    )}
+                    <form action={verifyDomainAction}>
+                      <input type="hidden" name="orgId" value={org.id} />
+                      <input type="hidden" name="domainId" value={domain.id} />
+                      <button type="submit" className="btn-secondary">{domain.status === "pending_dns" ? "Check DNS" : "Check now"}</button>
+                    </form>
                     <form action={removeDomainAction}>
                       <input type="hidden" name="orgId" value={org.id} />
                       <input type="hidden" name="domainId" value={domain.id} />

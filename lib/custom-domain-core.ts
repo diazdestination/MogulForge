@@ -114,6 +114,57 @@ export function isPlatformHost(host: string, platformHosts: string[]): boolean {
   return platformHosts.some((p) => p === h);
 }
 
+/**
+ * True when a CNAME lookup result points at the platform target
+ * (case-insensitive, trailing dots ignored).
+ */
+export function cnameMatchesTarget(records: string[], target: string): boolean {
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/\.+$/, "");
+  const expected = normalize(target);
+  if (!expected) return false;
+  return records.some((record) => normalize(record) === expected);
+}
+
+export type GoLiveStep = { key: "dns_verified" | "activated" | "certificate" | "https"; label: string; done: boolean; detail: string | null };
+
+/**
+ * Go-live checklist shown to clients and admins: DNS verified → activated
+ * (routing live) → certificate setup → HTTPS confirmed. SSL is only ever
+ * confirmed from real HTTPS traffic, so the last two steps flip together
+ * when ssl_status reaches 'issued'.
+ */
+export function domainGoLiveChecklist(domain: { status: DomainStatus; sslStatus: SslStatus }): GoLiveStep[] {
+  const verified = domain.status === "verified" || domain.status === "active";
+  const active = domain.status === "active";
+  const issued = domain.sslStatus === "issued";
+  return [
+    {
+      key: "dns_verified",
+      label: "DNS verified",
+      done: verified,
+      detail: verified ? null : "Add the TXT record below, then run a check.",
+    },
+    {
+      key: "activated",
+      label: "Domain activated — routing live",
+      done: active,
+      detail: active ? null : verified ? "MogulForge activates the domain during your scheduled cutover." : null,
+    },
+    {
+      key: "certificate",
+      label: "SSL certificate setup",
+      done: issued,
+      detail: issued ? null : active ? "MogulForge is finishing certificate setup." : null,
+    },
+    {
+      key: "https",
+      label: "HTTPS confirmed live",
+      done: issued,
+      detail: issued ? null : active ? "Confirmed automatically when the first secure request arrives on your domain." : null,
+    },
+  ];
+}
+
 export type ActivationCheckInput = {
   status: string;
   domain: string;
