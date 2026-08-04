@@ -346,6 +346,8 @@ export function RescueLeadDetailPanel({ orgId, leadId, canAct, canManage }: {
         </div>
       )}
 
+      <CloserBriefingCard orgId={orgId} leadId={leadId} />
+
       <div className={box}>
         <h2 className="font-display text-xl font-semibold">Timeline</h2>
         {activities.length === 0 ? <p className="mt-3 text-sm text-white/50">No activity recorded yet.</p> : (
@@ -362,6 +364,81 @@ export function RescueLeadDetailPanel({ orgId, leadId, canAct, canManage }: {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+type BriefingData = { briefingText: string | null; generatedAt: string; error: string | null } | null;
+
+function CloserBriefingCard({ orgId, leadId }: { orgId: string; leadId: string }) {
+  const [open, setOpen] = useState(false);
+  const [briefing, setBriefing] = useState<BriefingData>(null);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const fetchBriefing = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/leads/${leadId}/briefing`, { cache: "no-store" });
+      const body = await res.json().catch(() => null);
+      if (res.ok) setBriefing(body.briefing as BriefingData);
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId, leadId]);
+
+  const generate = useCallback(async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/leads/${leadId}/briefing`, { method: "POST" });
+      const body = await res.json().catch(() => null);
+      if (res.ok) setBriefing(body.briefing as BriefingData);
+    } finally {
+      setGenerating(false);
+    }
+  }, [orgId, leadId]);
+
+  function toggle() {
+    setOpen((o) => {
+      if (!o && !briefing && !loading) void Promise.resolve().then(fetchBriefing);
+      return !o;
+    });
+  }
+
+  return (
+    <div className={box}>
+      <button type="button" onClick={toggle} className="flex w-full items-center justify-between gap-2">
+        <h2 className="font-display text-xl font-semibold">Closer briefing</h2>
+        <span className="text-xs text-white/40">{open ? "▲ collapse" : "▼ expand"}</span>
+      </button>
+      {open && (
+        <div className="mt-4">
+          {loading && <p className="text-sm text-white/50">Loading…</p>}
+          {!loading && !briefing && (
+            <p className="text-sm text-white/50">No briefing generated yet.</p>
+          )}
+          {!loading && briefing?.error && (
+            <p className="text-sm text-forge-rust">{briefing.error}</p>
+          )}
+          {!loading && briefing?.briefingText && (
+            <div className="space-y-1">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/85">{briefing.briefingText}</p>
+              <p className="text-xs text-white/30">Generated {new Date(briefing.generatedAt).toLocaleString()}</p>
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={generating}
+            onClick={() => void generate()}
+            className="mt-4 rounded-xl bg-white/5 px-4 py-2 text-xs text-white/55 transition hover:bg-white/10 disabled:opacity-50"
+          >
+            {generating ? "Generating…" : briefing ? "Regenerate" : "Generate briefing"}
+          </button>
+          <p className="mt-2 text-[11px] text-white/30">
+            Uses AI to summarize why this lead deserves attention and the best approach to take.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

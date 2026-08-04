@@ -69,6 +69,7 @@ export function RescueReportsPanel({ orgId }: { orgId: string }) {
   const [data, setData] = useState<{ metrics: Metrics; scopedToAssigned: boolean } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [organicWins, setOrganicWins] = useState<{ count: number; wonRevenue: number } | null>(null);
 
   const range: ReportRange = useMemo(() => {
     if (presetKey === "custom") return { from: custom.from || null, to: custom.to || null };
@@ -91,6 +92,15 @@ export function RescueReportsPanel({ orgId }: { orgId: string }) {
     }
   }, [orgId, range]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`/api/orgs/${orgId}/organic-wins`, { cache: "no-store" });
+        if (res.ok) setOrganicWins(await res.json() as { count: number; wonRevenue: number });
+      } catch { /* non-critical */ }
+    })();
+  }, [orgId]);
 
   const m = data?.metrics;
   const maxFunnel = Math.max(1, ...(m?.funnel.map((f) => f.count) ?? [1]));
@@ -142,6 +152,25 @@ export function RescueReportsPanel({ orgId }: { orgId: string }) {
       {error && <p className="rounded-2xl border border-forge-rust/40 bg-forge-rust/10 p-5 text-sm text-forge-rust">{error}</p>}
       {!error && !m && <p className="text-sm text-white/50">Loading report…</p>}
       {data?.scopedToAssigned && <p className="text-xs text-white/45">Showing your assigned leads only.</p>}
+
+      {organicWins && (
+        <div className="rounded-2xl border border-forge-lime/20 bg-forge-lime/5 p-5">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-forge-lime/70">First job without ads — organic wins</p>
+          <div className="mt-3 flex flex-wrap gap-6">
+            <div>
+              <p className="font-display text-4xl font-semibold text-forge-lime">{organicWins.count}</p>
+              <p className="mt-1 text-xs text-white/50">leads at appointment or won stage</p>
+            </div>
+            {organicWins.wonRevenue > 0 && (
+              <div>
+                <p className="font-display text-4xl font-semibold text-forge-lime">{money(organicWins.wonRevenue)}</p>
+                <p className="mt-1 text-xs text-white/50">won revenue, no ad spend</p>
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-white/40">Recovered and imported leads that turned into real appointments or wins — the platform paying for itself before you spend a dollar on ads.</p>
+        </div>
+      )}
 
       {m && (
         <div className={loading ? "space-y-6 opacity-60 transition" : "space-y-6"}>
