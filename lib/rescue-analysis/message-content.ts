@@ -119,6 +119,26 @@ export function ensureOptOutLanguage(type: MessageType, content: Record<string, 
     if (lower.includes("unsubscribe") || lower.includes("opt out") || lower.includes("opt-out")) return content;
     return parseMessageContent("email", { subject: String(content.subject ?? ""), body: `${body.trimEnd()}\n\n${EMAIL_OPT_OUT}` });
   }
+  if (type === "sequence") {
+    const steps = Array.isArray(content.steps) ? content.steps : [];
+    const fixed = steps.map((step: Record<string, unknown>) => {
+      const channel = String(step.channel ?? "");
+      if (channel === "sms") {
+        const body = String(step.body ?? "");
+        if (body.toLowerCase().includes("reply stop")) return step;
+        return { ...step, body: `${body.trim()} ${SMS_OPT_OUT}`.trim() };
+      }
+      if (channel === "email") {
+        const body = String(step.body ?? "");
+        const lower = body.toLowerCase();
+        if (lower.includes("unsubscribe") || lower.includes("opt out") || lower.includes("opt-out")) return step;
+        return { ...step, body: `${body.trimEnd()}\n\n${EMAIL_OPT_OUT}` };
+      }
+      // call steps pass through unchanged
+      return step;
+    });
+    return parseMessageContent("sequence", { steps: fixed });
+  }
   return content;
 }
 /** Compliance warnings surfaced with a draft (never blocking — suppression blocks earlier). */

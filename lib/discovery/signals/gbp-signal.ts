@@ -1,6 +1,7 @@
 import "server-only";
 import { getPool } from "@/lib/db";
 import { getOrgGoogleAccessToken } from "@/lib/calendar/org-connections";
+import { GBP_SCOPE, parseGrantedScopes } from "./gbp-scope.ts";
 
 export type GbpOpportunityInput = {
   kind: "gbp_review";
@@ -17,8 +18,6 @@ export type GbpSignalResult =
   | { status: "no_scope" }
   | { status: "error"; error: string };
 
-const GBP_SCOPE = "https://www.googleapis.com/auth/business.manage";
-
 /**
  * Fetches unanswered Google Business Profile reviews.
  * Returns not_connected / no_scope honestly when the org hasn't granted access.
@@ -33,7 +32,7 @@ export async function getGbpSignals(organizationId: string): Promise<GbpSignalRe
   );
   if (rows.length === 0) return { status: "not_connected" };
 
-  const granted: string[] = typeof rows[0].granted_scopes === "string" ? rows[0].granted_scopes.split(" ").filter(Boolean) : [];
+  const granted: string[] = parseGrantedScopes(rows[0].granted_scopes);
   if (!granted.includes(GBP_SCOPE)) return { status: "no_scope" };
 
   let accessToken: string;

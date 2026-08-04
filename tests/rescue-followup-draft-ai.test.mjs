@@ -169,3 +169,103 @@ test("the prompt carries attempt number, final-attempt framing, and the booking 
   assert.ok(calls[0].input.includes("https://example.com/book/tok123"));
   assert.match(calls[0].instructions, /Opt-out language is REQUIRED/);
 });
+
+// ---------- Sequence steps: opt-out enforced per channel ----------
+
+test("sequence SMS step missing opt-out gets it appended", async () => {
+  const aiSequence = {
+    steps: [
+      { channel: "sms", delayDays: 0, subject: null, body: "Hi Maria, just checking in on your roof project." },
+      { channel: "call", delayDays: 3, subject: null, body: "Call to follow up." },
+    ],
+  };
+  scriptResponse(JSON.stringify(aiSequence));
+  const draft = await generateMessageDraft(
+    makeLead(),
+    { type: "sequence", tone: "professional", includeOptOutLanguage: true },
+    "Acme Roofing",
+  );
+  assert.equal(draft.mode, "ai");
+  const steps = draft.content.steps;
+  const smsStep = steps.find((s) => s.channel === "sms");
+  assert.ok(String(smsStep.body).includes(SMS_OPT_OUT), "SMS step must carry opt-out");
+});
+
+test("sequence email step missing opt-out gets it appended", async () => {
+  const aiSequence = {
+    steps: [
+      { channel: "email", delayDays: 0, subject: "Checking in", body: "Hi Maria,\n\nJust circling back on your roof project." },
+      { channel: "call", delayDays: 7, subject: null, body: "Call to follow up." },
+    ],
+  };
+  scriptResponse(JSON.stringify(aiSequence));
+  const draft = await generateMessageDraft(
+    makeLead(),
+    { type: "sequence", tone: "professional", includeOptOutLanguage: true },
+    "Acme Roofing",
+  );
+  assert.equal(draft.mode, "ai");
+  const steps = draft.content.steps;
+  const emailStep = steps.find((s) => s.channel === "email");
+  assert.ok(String(emailStep.body).includes(EMAIL_OPT_OUT), "email step must carry opt-out");
+});
+
+test("sequence call step passes through unchanged", async () => {
+  const callBody = "Call Maria to discuss her roof replacement project.";
+  const aiSequence = {
+    steps: [
+      { channel: "sms", delayDays: 0, subject: null, body: `Hi Maria, quick check-in. ${SMS_OPT_OUT}` },
+      { channel: "call", delayDays: 3, subject: null, body: callBody },
+    ],
+  };
+  scriptResponse(JSON.stringify(aiSequence));
+  const draft = await generateMessageDraft(
+    makeLead(),
+    { type: "sequence", tone: "professional", includeOptOutLanguage: true },
+    "Acme Roofing",
+  );
+  assert.equal(draft.mode, "ai");
+  const callStep = draft.content.steps.find((s) => s.channel === "call");
+  assert.equal(callStep.body, callBody, "call step body must be unchanged");
+});
+
+test("sequence with mixed steps: SMS and email both missing opt-out both get it", async () => {
+  const aiSequence = {
+    steps: [
+      { channel: "email", delayDays: 0, subject: "Following up", body: "Hi Maria,\n\nJust following up on your project." },
+      { channel: "sms", delayDays: 3, subject: null, body: "Hi Maria, Acme Roofing here." },
+      { channel: "call", delayDays: 7, subject: null, body: "Call to close out." },
+    ],
+  };
+  scriptResponse(JSON.stringify(aiSequence));
+  const draft = await generateMessageDraft(
+    makeLead(),
+    { type: "sequence", tone: "professional", includeOptOutLanguage: true },
+    "Acme Roofing",
+  );
+  assert.equal(draft.mode, "ai");
+  const steps = draft.content.steps;
+  const emailStep = steps.find((s) => s.channel === "email");
+  const smsStep = steps.find((s) => s.channel === "sms");
+  assert.ok(String(emailStep.body).includes(EMAIL_OPT_OUT), "email step must carry opt-out");
+  assert.ok(String(smsStep.body).includes(SMS_OPT_OUT), "SMS step must carry opt-out");
+});
+
+test("sequence step that already has opt-out is not double-appended", async () => {
+  const smsBody = `Hi Maria, quick note about your roof. ${SMS_OPT_OUT}`;
+  const aiSequence = {
+    steps: [
+      { channel: "sms", delayDays: 0, subject: null, body: smsBody },
+      { channel: "call", delayDays: 3, subject: null, body: "Call to follow up." },
+    ],
+  };
+  scriptResponse(JSON.stringify(aiSequence));
+  const draft = await generateMessageDraft(
+    makeLead(),
+    { type: "sequence", tone: "professional", includeOptOutLanguage: true },
+    "Acme Roofing",
+  );
+  assert.equal(draft.mode, "ai");
+  const smsStep = draft.content.steps.find((s) => s.channel === "sms");
+  assert.equal(smsStep.body, smsBody, "compliant SMS step must not be modified");
+});
