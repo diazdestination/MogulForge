@@ -4,7 +4,7 @@ import { logAudit } from "../audit";
 import { getCrmProvider, pushLeadForProvider } from "./adapters";
 import { getCrmConnection } from "./store";
 import { sendOrgAlertInBackground } from "../org-alerts";
-import { buildCrmConnectionErrorEmail } from "../org-alerts-content.ts";
+import { buildCrmConnectionErrorEmail, buildCrmConnectionRecoveredEmail } from "../org-alerts-content.ts";
 import { SITE_URL } from "../site";
 
 /**
@@ -115,12 +115,31 @@ async function bumpFailureCount(
   const pool = getPool();
   if (ok) {
     // A success proves the connection works again — clear the counter and recover from 'error'.
-    await pool.query(
-      `UPDATE crm_connections SET push_failure_count = 0,
-         status = CASE WHEN status = 'error' THEN 'active' ELSE status END, updated_at = now()
-       WHERE organization_id = $1 AND id = $2`,
+    // The status='error' guard makes this statement match only when it performs
+    // the error → active flip, so its row count is an exact recovery signal:
+    // ordinary successes on an active connection fall through to the reset below.
+    const recovered = await pool.query(
+      `UPDATE crm_connections SET push_failure_count = 0, status = 'active', updated_at = now()
+       WHERE organization_id = $1 AND id = $2 AND status = 'error'`,
       [organizationId, connectionId],
     );
+    if ((recovered.rowCount ?? 0) === 0) {
+      await pool.query(
+        `UPDATE crm_connections SET push_failure_count = 0, updated_at = now()
+         WHERE organization_id = $1 AND id = $2 AND push_failure_count <> 0`,
+        [organizationId, connectionId],
+      );
+    } else {
+      await logAudit({
+        organizationId,
+        actorLabel: "system",
+        action: "crm_connection.recovered",
+        targetType: "crm_connection",
+        targetId: connectionId,
+        metadata: { provider },
+      });
+      await notifyConnectionRecovered(organizationId, connectionId, provider);
+    }
     return;
   }
   const { rows } = await pool.query(
@@ -182,6 +201,36 @@ async function notifyConnectionErrored(
     );
   } catch (error) {
     console.error(`CRM connection error alert failed for organization ${organizationId}`, error);
+  }
+}
+
+/**
+ * Emails the org's notification recipients when a connection recovers from
+ * 'error' back to 'active' (a push succeeded again), closing the loop opened
+ * by the outage email. Same crmConnectionAlerts toggle and fire-and-forget
+ * semantics as notifyConnectionErrored.
+ */
+async function notifyConnectionRecovered(organizationId: string, connectionId: string, provider: string): Promise<void> {
+  try {
+    const pool = getPool();
+    const [orgRows, connection] = await Promise.all([
+      pool.query("SELECT name FROM organizations WHERE id = $1", [organizationId]),
+      getCrmConnection(organizationId, connectionId),
+    ]);
+    const orgName = orgRows.rows[0]?.name ? String(orgRows.rows[0].name) : "Your organization";
+    const providerLabel = getCrmProvider(provider)?.label ?? provider;
+    sendOrgAlertInBackground(
+      organizationId,
+      "crmConnectionAlerts",
+      buildCrmConnectionRecoveredEmail({
+        orgName,
+        connectionName: connection?.name ?? providerLabel,
+        providerLabel,
+        integrationsUrl: `${SITE_URL}/dashboard/revenue-rescue/integrations`,
+      }),
+    );
+  } catch (error) {
+    console.error(`CRM connection recovery alert failed for organization ${organizationId}`, error);
   }
 }
 

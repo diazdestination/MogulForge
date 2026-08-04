@@ -256,6 +256,22 @@ test("repeated failures flip the connection to 'error'; a successful retry resto
   assert.equal(retried.json.delivery.status, "succeeded");
   const list = await request(`/api/orgs/${state.org}/integrations/crm`, { cookie: state.owner });
   assert.equal(list.json.connections.find((c) => c.id === state.conn).status, "active");
+
+  // The error → active flip is recorded exactly once (drives the recovery email).
+  const audits = await db.query(
+    `SELECT count(*)::int AS n FROM audit_logs WHERE organization_id = $1 AND target_id = $2 AND action = 'crm_connection.recovered'`,
+    [state.org, state.conn],
+  );
+  assert.equal(audits.rows[0].n, 1, "recovery must be recorded exactly once on the error → active flip");
+
+  // Another ordinary success on the now-active connection must NOT record a second recovery.
+  await createLead("Steady");
+  await waitForDeliveries((rows) => rows.some((d) => d.leadName === "Steady Delivery" && d.status === "succeeded"));
+  const again = await db.query(
+    `SELECT count(*)::int AS n FROM audit_logs WHERE organization_id = $1 AND target_id = $2 AND action = 'crm_connection.recovered'`,
+    [state.org, state.conn],
+  );
+  assert.equal(again.rows[0].n, 1, "ordinary successes on an active connection must not re-announce recovery");
 });
 
 // --- Automatic retry of failed pushes (background processor) ---

@@ -4,6 +4,7 @@ import {
   buildAnalysisHotLeadsEmail,
   buildAppointmentAlertEmail,
   buildCrmConnectionErrorEmail,
+  buildCrmConnectionRecoveredEmail,
   buildHotLeadAlertEmail,
   buildOrgDigestEmail,
   buildReplyAlertEmail,
@@ -96,6 +97,21 @@ test("crm connection error alert omits the last-error row when there is none", (
     integrationsUrl: "https://x.test/dashboard/revenue-rescue/integrations",
   });
   assert.ok(!email.html.includes("Last error"));
+});
+
+test("crm connection recovered alert names connection/provider and links the delivery log", () => {
+  const email = buildCrmConnectionRecoveredEmail({
+    orgName: "Acme",
+    connectionName: "Main <HubSpot>",
+    providerLabel: "HubSpot",
+    integrationsUrl: "https://mogulforge.replit.app/dashboard/revenue-rescue/integrations",
+  });
+  assert.equal(email.subject, "CRM connection recovered: Main <HubSpot> (HubSpot) is delivering again");
+  assert.ok(email.html.includes("Main &lt;HubSpot&gt;"));
+  assert.ok(!email.html.includes("Main <HubSpot>"));
+  assert.ok(email.html.includes("HubSpot"));
+  assert.ok(email.html.includes('href="https://mogulforge.replit.app/dashboard/revenue-rescue/integrations"'));
+  assert.ok(email.html.includes("resumed"));
 });
 
 test("digest activity gate and stat rendering", () => {

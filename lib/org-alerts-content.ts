@@ -178,6 +178,29 @@ export function buildCrmConnectionErrorEmail(input: {
   };
 }
 
+export function buildCrmConnectionRecoveredEmail(input: {
+  orgName: string;
+  connectionName: string;
+  providerLabel: string;
+  integrationsUrl: string;
+}): AlertEmail {
+  return {
+    subject: `CRM connection recovered: ${input.connectionName} (${input.providerLabel}) is delivering again`,
+    html: wrap(
+      `✅ CRM connection recovered — ${input.connectionName}`,
+      `<p style="margin-top:0;color:#374151;">Good news — a lead push to your ${escapeHtml(input.providerLabel)} connection just succeeded, so automatic lead delivery has resumed. No action is needed.</p>
+       ${detailRows([
+         ["Connection", input.connectionName],
+         ["Provider", input.providerLabel],
+         ["Status", "Active — delivering leads again"],
+       ])}
+       <p style="margin-top:16px;"><a href="${escapeHtml(input.integrationsUrl)}" style="background:#111827;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px;">Review the delivery log</a></p>
+       <p style="color:#374151;font-size:13px;">Earlier failed deliveries were not sent automatically — you can retry them from the delivery log on the Integrations page.</p>`,
+      `Sent by ${input.orgName} alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export function buildCustomDomainErrorEmail(input: {
   orgName: string;
   domain: string;
