@@ -17,6 +17,23 @@ import { SITE_URL } from "../site";
 /** Consecutive push failures before a connection is flipped to 'error'. */
 export const ERROR_THRESHOLD_FAILURES = 5;
 
+/**
+ * Automatic retry backoff (seconds) after attempt N fails: 1m, 5m, 30m, 2h, 8h;
+ * then retries stop. Mirrors RETRY_BACKOFF_SECONDS in lib/webhooks/outgoing.ts.
+ */
+export const PUSH_RETRY_BACKOFF_SECONDS = [60, 300, 1800, 7200, 28800];
+export const MAX_PUSH_ATTEMPTS = PUSH_RETRY_BACKOFF_SECONDS.length + 1;
+
+/**
+ * Next automatic retry time after `attempts` failed attempts, or null when
+ * attempts are exhausted (a manual retry is still allowed past this point).
+ */
+function nextAttemptAfterFailure(attempts: number): Date | null {
+  if (attempts >= MAX_PUSH_ATTEMPTS) return null;
+  const backoff = PUSH_RETRY_BACKOFF_SECONDS[Math.min(attempts - 1, PUSH_RETRY_BACKOFF_SECONDS.length - 1)];
+  return new Date(Date.now() + backoff * 1000);
+}
+
 /** Succeeded deliveries are kept this many days — long enough to audit recent pushes. */
 export const SUCCEEDED_RETENTION_DAYS = 30;
 /** Failed deliveries are kept longer so clients can still see and retry them. */
@@ -31,6 +48,7 @@ export type CrmPushDelivery = {
   provider: string;
   status: "succeeded" | "failed";
   attempts: number;
+  nextAttemptAt: string | null;
   lastStatusCode: number | null;
   lastError: string | null;
   deliveredAt: string | null;
@@ -48,6 +66,7 @@ function mapRow(row: Record<string, unknown>): CrmPushDelivery {
     provider: String(row.provider),
     status: row.status === "succeeded" ? "succeeded" : "failed",
     attempts: Number(row.attempts ?? 1),
+    nextAttemptAt: row.next_attempt_at ? new Date(row.next_attempt_at as string).toISOString() : null,
     lastStatusCode: row.last_status_code == null ? null : Number(row.last_status_code),
     lastError: row.last_error ? String(row.last_error) : null,
     deliveredAt: row.delivered_at ? new Date(row.delivered_at as string).toISOString() : null,
@@ -66,8 +85,8 @@ export async function recordPushDelivery(
 ): Promise<string> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO crm_push_deliveries (organization_id, connection_id, lead_id, provider, status, last_status_code, last_error, delivered_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO crm_push_deliveries (organization_id, connection_id, lead_id, provider, status, last_status_code, last_error, delivered_at, next_attempt_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       organizationId,
       input.connectionId,
@@ -77,6 +96,8 @@ export async function recordPushDelivery(
       input.statusCode,
       input.ok ? null : input.message.slice(0, 500),
       input.ok ? new Date() : null,
+      // Failed pushes get an automatic retry schedule (this row is attempt 1).
+      input.ok ? null : nextAttemptAfterFailure(1),
     ],
   );
   await bumpFailureCount(organizationId, input.connectionId, input.provider, input.ok, input.message);
@@ -218,18 +239,35 @@ export async function retryPushDelivery(
   // Scope check before any side effect: the delivery must belong to the connection in the route.
   if (!delivery || delivery.connectionId !== connectionId) return { delivery: null, error: "Delivery not found." };
   if (delivery.status === "succeeded") return { delivery, error: "This delivery already succeeded — nothing to retry." };
+  const clearSchedule = () =>
+    getPool().query(`UPDATE crm_push_deliveries SET next_attempt_at = NULL, updated_at = now() WHERE id = $1`, [deliveryId]);
   const connection = await getCrmConnection(organizationId, delivery.connectionId);
-  if (!connection) return { delivery, error: "The connection for this delivery no longer exists." };
+  if (!connection) {
+    // Unretryable — stop the background processor from picking this row up again.
+    await clearSchedule();
+    return { delivery, error: "The connection for this delivery no longer exists." };
+  }
   const fields = await loadLeadFields(organizationId, delivery.leadId);
-  if (!fields) return { delivery, error: "The lead for this delivery no longer exists." };
+  if (!fields) {
+    await clearSchedule();
+    return { delivery, error: "The lead for this delivery no longer exists." };
+  }
 
   const result = await pushLeadForProvider(connection.provider, connection.config, connection.fieldMapping, fields);
   await getPool().query(
     `UPDATE crm_push_deliveries
      SET status = $2, attempts = attempts + 1, last_status_code = $3, last_error = $4,
-         delivered_at = CASE WHEN $2 = 'succeeded' THEN now() ELSE delivered_at END, updated_at = now()
+         delivered_at = CASE WHEN $2 = 'succeeded' THEN now() ELSE delivered_at END,
+         next_attempt_at = $5, updated_at = now()
      WHERE id = $1`,
-    [deliveryId, result.ok ? "succeeded" : "failed", result.statusCode, result.ok ? null : result.message.slice(0, 500)],
+    [
+      deliveryId,
+      result.ok ? "succeeded" : "failed",
+      result.statusCode,
+      result.ok ? null : result.message.slice(0, 500),
+      // Success clears the schedule; failure backs off until attempts run out.
+      result.ok ? null : nextAttemptAfterFailure(delivery.attempts + 1),
+    ],
   );
   await bumpFailureCount(organizationId, connection.id, connection.provider, result.ok, result.ok ? null : result.message);
   const updated = await getPushDelivery(organizationId, deliveryId);

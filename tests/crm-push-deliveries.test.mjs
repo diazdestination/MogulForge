@@ -90,6 +90,7 @@ before(async () => {
   assert.ok(process.env.ADMIN_PASSWORD, "ADMIN_PASSWORD must be set for tests");
   const adminLogin = await request("/api/admin/session", { method: "POST", body: { password: process.env.ADMIN_PASSWORD } });
   assert.equal(adminLogin.status, 200);
+  state.admin = adminLogin.cookie;
 
   const provision = await request("/api/admin/organizations", {
     method: "POST",
@@ -255,4 +256,87 @@ test("repeated failures flip the connection to 'error'; a successful retry resto
   assert.equal(retried.json.delivery.status, "succeeded");
   const list = await request(`/api/orgs/${state.org}/integrations/crm`, { cookie: state.owner });
   assert.equal(list.json.connections.find((c) => c.id === state.conn).status, "active");
+});
+
+// --- Automatic retry of failed pushes (background processor) ---
+
+/** Backdates a delivery's next_attempt_at so the processor sees it as due now. */
+async function makeDue(deliveryId) {
+  await db.query(`UPDATE crm_push_deliveries SET next_attempt_at = now() - interval '1 minute' WHERE id = $1`, [deliveryId]);
+}
+
+/** Runs the background processor via the cron route (admin-authenticated). */
+async function runCronPass() {
+  const res = await request("/api/cron/webhook-deliveries", { method: "POST", cookie: state.admin });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  return res.json;
+}
+
+test("failed push is scheduled for automatic retry and recovers without a manual click", async () => {
+  state.failMode = true;
+  await createLead("Auto");
+  const deliveries = await waitForDeliveries((rows) => rows.some((d) => d.leadName === "Auto Delivery" && d.status === "failed"));
+  const failed = deliveries.find((d) => d.leadName === "Auto Delivery");
+  // The failed row got a backoff schedule at insert time.
+  const { rows } = await db.query(`SELECT next_attempt_at FROM crm_push_deliveries WHERE id = $1`, [failed.id]);
+  assert.ok(rows[0].next_attempt_at, "failed delivery must have next_attempt_at set");
+
+  // CRM recovers; once the backoff elapses the processor re-pushes it automatically.
+  state.failMode = false;
+  await makeDue(failed.id);
+  await runCronPass();
+  const after = await request(`/api/orgs/${state.org}/integrations/crm/${state.conn}/deliveries`, { cookie: state.owner });
+  const recovered = after.json.deliveries.find((d) => d.id === failed.id);
+  assert.equal(recovered.status, "succeeded");
+  assert.equal(recovered.attempts, failed.attempts + 1);
+  const cleared = await db.query(`SELECT next_attempt_at FROM crm_push_deliveries WHERE id = $1`, [failed.id]);
+  assert.equal(cleared.rows[0].next_attempt_at, null, "success must clear the retry schedule");
+});
+
+test("automatic retries skip deliveries on non-active connections", async () => {
+  state.failMode = true;
+  await createLead("Paused");
+  const deliveries = await waitForDeliveries((rows) => rows.some((d) => d.leadName === "Paused Delivery" && d.status === "failed"));
+  const failed = deliveries.find((d) => d.leadName === "Paused Delivery");
+  state.failMode = false;
+
+  await db.query(`UPDATE crm_connections SET status = 'disabled' WHERE id = $1`, [state.conn]);
+  try {
+    await makeDue(failed.id);
+    await runCronPass();
+    const { rows } = await db.query(`SELECT status, attempts FROM crm_push_deliveries WHERE id = $1`, [failed.id]);
+    assert.equal(rows[0].status, "failed", "delivery on a disabled connection must not be retried");
+    assert.equal(Number(rows[0].attempts), failed.attempts);
+  } finally {
+    await db.query(`UPDATE crm_connections SET status = 'active', push_failure_count = 0 WHERE id = $1`, [state.conn]);
+  }
+
+  // Once the connection is active again, the still-due delivery recovers.
+  await runCronPass();
+  const { rows } = await db.query(`SELECT status FROM crm_push_deliveries WHERE id = $1`, [failed.id]);
+  assert.equal(rows[0].status, "succeeded");
+});
+
+test("automatic retries stop once attempts are exhausted", async () => {
+  state.failMode = true;
+  await createLead("Exhaust");
+  const deliveries = await waitForDeliveries((rows) => rows.some((d) => d.leadName === "Exhaust Delivery" && d.status === "failed"));
+  const failed = deliveries.find((d) => d.leadName === "Exhaust Delivery");
+
+  // Simulate being one attempt away from the cap (backoff schedule has 5 steps + initial attempt).
+  await db.query(`UPDATE crm_push_deliveries SET attempts = 5, next_attempt_at = now() - interval '1 minute' WHERE id = $1`, [failed.id]);
+  await runCronPass();
+  const { rows } = await db.query(`SELECT status, attempts, next_attempt_at FROM crm_push_deliveries WHERE id = $1`, [failed.id]);
+  assert.equal(rows[0].status, "failed");
+  assert.equal(Number(rows[0].attempts), 6);
+  assert.equal(rows[0].next_attempt_at, null, "exhausted delivery must not be rescheduled");
+
+  // With no schedule left, another pass does nothing.
+  await runCronPass();
+  const again = await db.query(`SELECT attempts FROM crm_push_deliveries WHERE id = $1`, [failed.id]);
+  assert.equal(Number(again.rows[0].attempts), 6);
+
+  // Leave the receiver healthy and reset the failure counter for any later tests.
+  state.failMode = false;
+  await db.query(`UPDATE crm_connections SET status = 'active', push_failure_count = 0 WHERE id = $1`, [state.conn]);
 });

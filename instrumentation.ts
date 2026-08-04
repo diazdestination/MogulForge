@@ -72,6 +72,17 @@ export async function register() {
           }
         } catch (error) {
           console.error("Scheduled CRM pull pass failed", error);
+        }
+        // Due failed CRM push deliveries ride the same guard; retries are
+        // due-time based (backoff), so a per-minute check picks them up promptly.
+        try {
+          const { processDueCrmPushRetries } = await import("./lib/crm/sync");
+          const result = await processDueCrmPushRetries();
+          if (result.processed > 0) {
+            console.log(`CRM push retry pass: ${result.processed} retried, ${result.recovered} recovered`);
+          }
+        } catch (error) {
+          console.error("CRM push retry pass failed", error);
         } finally {
           crmPullRunning = false;
         }

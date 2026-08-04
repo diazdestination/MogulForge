@@ -2,7 +2,7 @@ import "server-only";
 import { getPool } from "../db";
 import { logAudit } from "../audit";
 import { pushLeadForProvider, pullContactsForProvider, type RemoteContact } from "./adapters";
-import { recordPushDelivery } from "./deliveries";
+import { recordPushDelivery, retryPushDelivery } from "./deliveries";
 import { getCrmConnection, listCrmConnections, recordSyncConflict, updateCrmConnection, type CrmConnection } from "./store";
 import { normalizeEmail, normalizePhone } from "../public-api/lead-intake";
 
@@ -221,6 +221,41 @@ export async function pullCrmUpdates(organizationId: string, connection: CrmConn
     lastTestResult: { ...(connection.lastTestResult ?? {}), lastPull: { at: new Date().toISOString(), ...summary } },
   });
   return summary;
+}
+
+/**
+ * Background processor: re-pushes failed CRM push deliveries whose backoff
+ * window has elapsed. Only deliveries on active connections are picked up —
+ * disabled/error connections keep their rows (and next_attempt_at) untouched
+ * so the manual Retry button still works, but automatic retries stop.
+ * Each retry flows through retryPushDelivery, so attempts/backoff/exhaustion
+ * and the connection failure counter behave exactly like a manual retry.
+ */
+export async function processDueCrmPushRetries(limit = 25): Promise<{ processed: number; recovered: number }> {
+  const { rows } = await getPool().query(
+    `SELECT d.id, d.organization_id, d.connection_id FROM crm_push_deliveries d
+     JOIN crm_connections c ON c.id = d.connection_id
+     WHERE d.status = 'failed' AND d.next_attempt_at IS NOT NULL AND d.next_attempt_at <= now()
+       AND c.status = 'active'
+     ORDER BY d.next_attempt_at ASC LIMIT $1`,
+    [limit],
+  );
+  let recovered = 0;
+  for (const row of rows) {
+    const organizationId = String(row.organization_id);
+    try {
+      const { delivery } = await retryPushDelivery(organizationId, String(row.connection_id), String(row.id), loadLeadFieldsForPush);
+      if (delivery?.status === "succeeded") recovered += 1;
+      // A lead/connection that vanished leaves next_attempt_at set; clear it so
+      // the processor never spins on an unretryable row.
+      if (!delivery) {
+        await getPool().query(`UPDATE crm_push_deliveries SET next_attempt_at = NULL, updated_at = now() WHERE id = $1`, [row.id]);
+      }
+    } catch (error) {
+      console.error("Scheduled CRM push retry failed", { organizationId, deliveryId: String(row.id) }, error);
+    }
+  }
+  return { processed: rows.length, recovered };
 }
 
 /** How often the scheduler pulls each active inbound-capable connection. */

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
 import { recordHeartbeat } from "@/lib/cron-heartbeat";
 import { processDueDeliveries } from "@/lib/webhooks/outgoing";
-import { runScheduledCrmPulls } from "@/lib/crm/sync";
+import { runScheduledCrmPulls, processDueCrmPushRetries } from "@/lib/crm/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +31,13 @@ async function run(request: Request) {
       console.error("Scheduled CRM pull pass failed", error);
       return { pulled: 0, failed: 0 };
     });
-    return NextResponse.json({ ...result, crmPulls });
+    // Due failed CRM push deliveries retry on the same trigger; failures there
+    // never block webhook retry processing either.
+    const crmPushRetries = await processDueCrmPushRetries().catch((error) => {
+      console.error("CRM push retry pass failed", error);
+      return { processed: 0, recovered: 0 };
+    });
+    return NextResponse.json({ ...result, crmPulls, crmPushRetries });
   } catch (error) {
     console.error("Webhook delivery processing failed", error);
     return NextResponse.json({ error: "Webhook delivery processing failed" }, { status: 500 });
