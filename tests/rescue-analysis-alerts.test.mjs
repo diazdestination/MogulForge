@@ -108,6 +108,8 @@ const notificationsOn = (to) => ({
 async function cleanup() {
   await db.query("DROP TRIGGER IF EXISTS test_fail_analysis_save ON rescue_leads");
   await db.query("DROP FUNCTION IF EXISTS test_fail_analysis_save_fn()");
+  await db.query("DROP TRIGGER IF EXISTS test_partial_fail_trigger ON rescue_leads");
+  await db.query("DROP FUNCTION IF EXISTS test_partial_fail_fn()");
   await db.query("DELETE FROM organizations WHERE slug LIKE 'test-hotal%'");
 }
 
@@ -199,5 +201,56 @@ test("a FAILED run sends nothing, even when its leads would have been hot", asyn
   } finally {
     await db.query("DROP TRIGGER IF EXISTS test_fail_analysis_save ON rescue_leads");
     await db.query("DROP FUNCTION IF EXISTS test_fail_analysis_save_fn()");
+  }
+});
+
+test("a PARTIAL run (some leads fail) sends exactly ONE summary email counting only successful hot leads", async () => {
+  const to = email("partial");
+  const orgId = await createOrg("partial", notificationsOn(to));
+  // 4 hot leads total; 2 will be forced to fail during their analysis save,
+  // leaving 2 successfully analyzed hot leads and run status = 'partial'.
+  await seedHotLeads(orgId, 4, `${RUN}-partial`);
+
+  // Identify exactly 2 leads to sabotage by their DB id.
+  const { rows: leadRows } = await db.query(
+    "SELECT id FROM rescue_leads WHERE organization_id = $1 ORDER BY created_at LIMIT 2",
+    [orgId],
+  );
+  const failIdLiteral = leadRows.map((r) => `'${r.id}'::uuid`).join(", ");
+
+  // Trigger that raises for only the two targeted leads on analysis-save.
+  await db.query(`
+    CREATE OR REPLACE FUNCTION test_partial_fail_fn() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.id = ANY(ARRAY[${failIdLiteral}]) THEN
+        RAISE EXCEPTION 'test: simulated partial save failure';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql`);
+  await db.query(`
+    CREATE TRIGGER test_partial_fail_trigger BEFORE UPDATE ON rescue_leads
+    FOR EACH ROW WHEN (NEW.analysis_status = 'analyzed')
+    EXECUTE FUNCTION test_partial_fail_fn()`);
+
+  try {
+    const result = await startAnalysisRun(orgId, { actorLabel: "test" });
+    assert.equal(result.started, true, JSON.stringify(result));
+
+    const run = await waitForRunSettled(orgId);
+    assert.equal(run.status, "partial");
+    assert.equal(run.analyzed_count, 2);
+    assert.equal(run.failed_count, 2);
+
+    // Alert is fire-and-forget: wait for it, then hold to catch any duplicate.
+    assert.ok(await waitFor(() => sendsTo(to).length >= 1), "expected the hot-lead summary email");
+    await new Promise((r) => setTimeout(r, 750));
+    const sends = sendsTo(to);
+    assert.equal(sends.length, 1, `expected exactly one summary send, got ${sends.length}`);
+    assert.equal(sends[0].subject, "Analysis found 2 hot opportunities");
+    assert.match(sends[0].html, /classified 2 of 2 analyzed leads/);
+  } finally {
+    await db.query("DROP TRIGGER IF EXISTS test_partial_fail_trigger ON rescue_leads");
+    await db.query("DROP FUNCTION IF EXISTS test_partial_fail_fn()");
   }
 });
