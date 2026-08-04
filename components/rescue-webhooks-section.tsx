@@ -312,22 +312,33 @@ export function RescueWebhooksSection({ orgId }: { orgId: string }) {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {deliveries.map((d) => (
-                  <tr key={d.id}>
-                    <td className="py-1.5 pr-4">{d.eventType}</td>
-                    <td className={`py-1.5 pr-4 ${d.status === "succeeded" ? "text-forge-lime" : d.status === "failed" || d.status === "exhausted" ? "text-red-300" : "text-white/60"}`}>
-                      {d.status}
-                    </td>
-                    <td className="py-1.5 pr-4 text-white/60">{d.attempts}</td>
-                    <td className="max-w-[240px] truncate py-1.5 pr-4 text-white/50">{d.lastError ?? (d.lastStatusCode ? `HTTP ${d.lastStatusCode}` : "—")}</td>
-                    <td className="py-1.5 pr-4 text-white/50">{new Date(d.createdAt).toLocaleString()}</td>
-                    <td className="py-1.5 text-right">
-                      {(d.status === "failed" || d.status === "exhausted") && (
-                        <button className={btnGhost} disabled={busy} onClick={() => post(`/api/orgs/${orgId}/integrations/deliveries/${d.id}/retry`)}>
-                          Retry now
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={d.id}>
+                      <td className="py-1.5 pr-4">{d.eventType}</td>
+                      <td className={`py-1.5 pr-4 ${d.status === "succeeded" ? "text-forge-lime" : d.status === "failed" || d.status === "exhausted" ? "text-red-300" : "text-white/60"}`}>
+                        {d.status}
+                      </td>
+                      <td className="py-1.5 pr-4 text-white/60">{d.attempts}</td>
+                      <td className="max-w-[240px] truncate py-1.5 pr-4 text-white/50">{d.lastError ?? (d.lastStatusCode ? `HTTP ${d.lastStatusCode}` : "—")}</td>
+                      <td className="py-1.5 pr-4 text-white/50">{new Date(d.createdAt).toLocaleString()}</td>
+                      <td className="py-1.5 text-right">
+                        {(d.status === "failed" || d.status === "exhausted") && (
+                          <button className={btnGhost} disabled={busy} onClick={() => post(`/api/orgs/${orgId}/integrations/deliveries/${d.id}/retry`)}>
+                            Retry now
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {(d.status === "failed" || d.status === "exhausted") && (
+                      <tr key={`${d.id}-retry`}>
+                        <td colSpan={6} className="pb-1.5 pt-0 text-white/40">
+                          {d.status === "failed" && d.nextAttemptAt
+                            ? `Retries automatically at ${new Date(d.nextAttemptAt).toLocaleString()}`
+                            : "No more automatic retries — use Retry now to push again"}
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
