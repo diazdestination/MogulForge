@@ -18,3 +18,4 @@
 - [SMS drafts vs. minted booking links](sms-booking-link-length.md) — long /book tokens can blow the SMS length cap; compose compactly, never drop link/opt-out; booking_url adapter is "connected" when SESSION_SECRET exists.
 - [Test suite serialization](test-suite-serialization.md) — never run `npm test` (all files parallel) against next dev; provisioning stampedes hang the server. Run test files one at a time.
 - [CRM pull semantics](crm-pull-semantics.md) — inbound CRM pull only updates EXISTING leads; unmatched contacts are never created. UI must not promise "import via CRM".
+- [SSRF guard vs dev domain](ssrf-guard-dev-domain.md) — REPLIT_DEV_DOMAIN resolves to a PRIVATE IP inside the container; crawler tests must target a real public site (example.com), never the dev domain.

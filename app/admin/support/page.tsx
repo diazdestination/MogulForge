@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/admin-auth";
 import { getOrganizationById, listEntitlements, listInvites, listMembers, searchOrganizations, isInviteActive } from "@/lib/tenant";
 import { listAuditLogs } from "@/lib/audit";
+import { listWidgetHeartbeats, widgetLiveness } from "@/lib/site-health";
 import { PLAN_LABELS } from "@/lib/plans";
 import { FEATURE_LABELS } from "@/lib/entitlements";
 
@@ -32,14 +33,15 @@ export default async function AdminSupportPage({ searchParams }: { searchParams:
   // Auto-select when the search narrows to a single org.
   const selectedOrgId = params.org || (results.length === 1 ? results[0].id : "");
   const org = selectedOrgId ? await getOrganizationById(selectedOrgId) : null;
-  const [members, entitlements, invites, auditLogs] = org
+  const [members, entitlements, invites, auditLogs, heartbeats] = org
     ? await Promise.all([
         listMembers(org.id),
         listEntitlements(org.id),
         listInvites(org.id),
         listAuditLogs({ organizationId: org.id, limit: 25 }),
+        listWidgetHeartbeats(org.id),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], []];
   const pendingInvites = invites.filter(isInviteActive);
   const enabledModules = entitlements.filter((e) => e.enabled);
 
@@ -144,6 +146,23 @@ export default async function AdminSupportPage({ searchParams }: { searchParams:
                 <span>{i.email}{i.name ? <span className="ml-2 text-white/50">{i.name}</span> : null}</span>
                 <span className="whitespace-nowrap text-xs text-white/40">{i.role} · expires {formatDate(i.expiresAt)}</span>
               </li>)}
+            </ul>
+          </div>
+
+          <div className="rounded-xl border border-white/10 p-5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white/50">Widget liveness ({heartbeats.length})</h3>
+            {heartbeats.length === 0 && <p className="mt-3 text-sm text-white/40">No widget heartbeats — the embed has never loaded on a client site.</p>}
+            <ul className="mt-3 space-y-2 text-sm">
+              {heartbeats.slice(0, 6).map((h) => {
+                const liveness = widgetLiveness(h.lastSeenAt);
+                const tone = liveness === "live" ? "border-forge-lime/40 text-forge-lime" : liveness === "recent" ? "border-yellow-400/40 text-yellow-300" : "border-red-400/40 text-red-300";
+                return <li key={`${h.origin}-${h.module}`} className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate"><span className="font-semibold">{h.origin}</span> <span className="text-white/50">{h.module}</span></span>
+                  <span className={`whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-bold ${tone}`}>
+                    {liveness === "live" ? "live" : `seen ${formatDateTime(h.lastSeenAt)}`}
+                  </span>
+                </li>;
+              })}
             </ul>
           </div>
 

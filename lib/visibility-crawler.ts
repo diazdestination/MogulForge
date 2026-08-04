@@ -8,7 +8,7 @@ const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BYTES = 1_500_000;
 const MAX_REDIRECTS = 5;
 
-async function assertPublicHost(url: URL): Promise<string | null> {
+export async function assertPublicHost(url: URL): Promise<string | null> {
   if (!/^https?:$/.test(url.protocol)) return "Only http and https websites can be scanned.";
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isPrivateHostname(hostname)) return "That address points to a private network and can't be scanned.";
@@ -51,7 +51,7 @@ export type CrawlSignals = {
   robotsMetaNoindex: boolean;
 };
 
-async function fetchWithLimits(url: string, accept = "text/html"): Promise<{ status: number; text: string; finalUrl: string } | null> {
+export async function fetchWithLimits(url: string, accept = "text/html"): Promise<{ status: number; text: string; finalUrl: string } | null> {
   let current = new URL(url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

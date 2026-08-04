@@ -163,6 +163,54 @@ export function isSitemapXml(text: string): boolean {
   return /<(urlset|sitemapindex)/i.test(text);
 }
 
+/** <loc> URLs from a sitemap (urlset or sitemapindex), capped. */
+export function extractSitemapLocs(xml: string, limit = 200): string[] {
+  const out: string[] = [];
+  for (const m of matchAll(xml, /<loc>\s*([^<\s][^<]*?)\s*<\/loc>/gi)) {
+    out.push(m[1].replace(/&amp;/g, "&"));
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** File extensions that are never HTML pages — skipped during site crawls. */
+const NON_PAGE_EXT = /\.(png|jpe?g|gif|webp|svg|ico|css|js|mjs|json|xml|txt|pdf|docx?|xlsx?|zip|gz|mp[34]|webm|mov|avi|woff2?|ttf|eot)$/i;
+
+/**
+ * Same-origin page links from an HTML document, resolved against baseUrl.
+ * Fragments are stripped, obvious assets and mailto/tel/javascript are skipped,
+ * and results are deduped in document order.
+ */
+export function extractInternalLinks(html: string, baseUrl: string, limit = 100): string[] {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matchAll(html, /<a\b[^>]*>/gi)) {
+    const href = attr(m[0], "href");
+    if (!href || /^(mailto:|tel:|javascript:|#)/i.test(href)) continue;
+    let url: URL;
+    try {
+      url = new URL(href.replace(/&amp;/g, "&"), base);
+    } catch {
+      continue;
+    }
+    if (url.origin !== base.origin) continue;
+    if (NON_PAGE_EXT.test(url.pathname)) continue;
+    url.hash = "";
+    const normalized = url.href;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export function isValidLlmsTxt(text: string): boolean {
   return text.trim().length > 0 && !/<html/i.test(text);
 }

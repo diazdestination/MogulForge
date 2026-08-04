@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { ApiError, guard, requireEntitlement, requireMember } from "@/lib/api-guard";
 import { MANAGER_ROLES } from "@/lib/roles";
 import {
+  GOOGLE_EXTRA_SCOPE_SETS,
   buildAuthorizationUrl,
   getOAuthAppCredentials,
+  isGoogleExtraScopeSet,
   isOrgCalendarProvider,
   issueOAuthState,
   safeReturnTo,
@@ -41,9 +43,15 @@ export const GET = guard(async (request: Request, { params }: Ctx) => {
   const url = new URL(request.url);
   const redirectUri = `${url.origin}/api/calendar/oauth/callback`;
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"), DEFAULT_RETURN);
+  // Incremental authorization: ?scopes=analytics asks for the read-only
+  // Search Console + GA4 scopes on top of the base grant. Google-only;
+  // include_granted_scopes keeps previously granted scopes intact.
+  const scopeSet = url.searchParams.get("scopes") ?? "";
+  const extraScopes =
+    provider === "google_calendar" && isGoogleExtraScopeSet(scopeSet) ? GOOGLE_EXTRA_SCOPE_SETS[scopeSet] : undefined;
   const state = issueOAuthState({ organizationId: org.id, userId: user.id, provider, redirectUri, returnTo });
   const creds = getOAuthAppCredentials(provider);
-  return NextResponse.redirect(buildAuthorizationUrl(provider, { clientId: creds!.clientId, redirectUri, state }));
+  return NextResponse.redirect(buildAuthorizationUrl(provider, { clientId: creds!.clientId, redirectUri, state, extraScopes }));
 });
 
 /** Disconnects the org's own calendar account: revokes (best effort) and deletes stored tokens. */

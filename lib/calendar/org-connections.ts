@@ -38,6 +38,8 @@ type ConnectionRow = {
   refresh_token_enc: string | null;
   expires_at: string | null;
   created_at: string;
+  /** Space-separated scopes the provider actually granted (null on pre-scope rows). */
+  granted_scopes: string | null;
 };
 
 async function getConnectionRow(organizationId: string, provider: OrgCalendarProvider): Promise<ConnectionRow | null> {
@@ -237,6 +239,31 @@ export async function resolveCalendarRoute(
 /** Whether the org has its own stored connection for a provider (regardless of token health). */
 export async function hasOrgCalendarConnection(organizationId: string, provider: OrgCalendarProvider): Promise<boolean> {
   return (await getConnectionRow(organizationId, provider)) !== null;
+}
+
+/**
+ * The org's Google connection state incl. which scopes were actually granted —
+ * used to decide whether Search Console / GA4 access exists. granted_scopes is
+ * null on connections made before scope tracking; treat that as "calendar only"
+ * (fail closed — never assume broader access than we can prove).
+ */
+export async function getOrgGoogleAuth(
+  organizationId: string,
+): Promise<{ connected: boolean; accountEmail: string | null; grantedScopes: string[] }> {
+  const row = await getConnectionRow(organizationId, "google_calendar");
+  if (!row) return { connected: false, accountEmail: null, grantedScopes: [] };
+  return {
+    connected: true,
+    accountEmail: row.account_email,
+    grantedScopes: (row.granted_scopes ?? "").split(/\s+/).filter(Boolean),
+  };
+}
+
+/** A valid (refreshed if needed) access token for the org's own Google connection. Throws when absent/broken. */
+export async function getOrgGoogleAccessToken(organizationId: string): Promise<string> {
+  const row = await getConnectionRow(organizationId, "google_calendar");
+  if (!row) throw new Error(`Org ${organizationId} has no Google connection`);
+  return getValidAccessToken(row);
 }
 
 /**

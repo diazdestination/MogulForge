@@ -34,6 +34,20 @@ const LOADER_SOURCE = `(function () {
     return out;
   }
 
+  // Liveness heartbeat: proves the widget is actually installed and running on
+  // the host page. Best-effort — never interferes with rendering. Stops firing
+  // once the short-lived token expires (the server ignores expired tokens).
+  function sendHeartbeat(base, token, moduleName) {
+    try {
+      fetch(base + "/api/embed/heartbeat", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ module: moduleName }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (err) { /* fetch unavailable — skip silently */ }
+  }
+
   function mount(el, options) {
     if (!el) throw new Error("RevenueRescue.mount: target element is required");
     var opts = options || {};
@@ -59,7 +73,9 @@ const LOADER_SOURCE = `(function () {
       }
     }
     window.addEventListener("message", onMessage);
-    return { iframe: iframe, destroy: function () { window.removeEventListener("message", onMessage); iframe.remove(); } };
+    sendHeartbeat(base, opts.token, moduleName);
+    var heartbeatTimer = setInterval(function () { sendHeartbeat(base, opts.token, moduleName); }, 5 * 60 * 1000);
+    return { iframe: iframe, destroy: function () { clearInterval(heartbeatTimer); window.removeEventListener("message", onMessage); iframe.remove(); } };
   }
 
   function autoMount() {

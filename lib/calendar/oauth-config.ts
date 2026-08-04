@@ -47,16 +47,34 @@ export const PROVIDER_ENDPOINTS: Record<OrgCalendarProvider, { authUrl: string; 
   },
 };
 
+/**
+ * Named extra scope sets for incremental authorization (Google only).
+ * "analytics" = read-only Search Console + GA4 — powers the lead-gen
+ * analytics view. Never includes any send/write scope.
+ */
+export const GOOGLE_EXTRA_SCOPE_SETS = {
+  analytics: [
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "https://www.googleapis.com/auth/analytics.readonly",
+  ],
+} as const;
+export type GoogleExtraScopeSet = keyof typeof GOOGLE_EXTRA_SCOPE_SETS;
+
+export function isGoogleExtraScopeSet(value: string): value is GoogleExtraScopeSet {
+  return value in GOOGLE_EXTRA_SCOPE_SETS;
+}
+
 export function buildAuthorizationUrl(
   provider: OrgCalendarProvider,
-  input: { clientId: string; redirectUri: string; state: string },
+  input: { clientId: string; redirectUri: string; state: string; extraScopes?: readonly string[] },
 ): string {
   const endpoint = PROVIDER_ENDPOINTS[provider];
+  const scope = [endpoint.scope, ...(input.extraScopes ?? [])].join(" ");
   const params = new URLSearchParams({
     client_id: input.clientId,
     redirect_uri: input.redirectUri,
     response_type: "code",
-    scope: endpoint.scope,
+    scope,
     state: input.state,
   });
   if (provider === "google_calendar") {
