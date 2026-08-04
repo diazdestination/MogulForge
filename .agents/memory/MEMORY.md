@@ -1,7 +1,7 @@
 - [Source repo location](source-repo.md) — real code lives in diazdestination/MogulForge branch agent/build-mogulforge-website, NOT the originally imported diazadam/RoofStorm repo.
 - [Lint purity rule in server components](lint-server-component-purity.md) — react-hooks/purity errors on Date.now() in app/ pages; move time logic into lib helpers, and lint app/lib/components only.
 - [Resend email setup](resend-email.md) — digest sends from onboarding@resend.dev until domain verifies; autoscale means the in-app timer only fires while warm.
-- [Testing TS modules + xlsx install](testing-ts-modules.md) — node:test imports pure lib .ts directly (needs explicit .ts relative imports); xlsx comes from the SheetJS CDN tarball, not npm.
+- [Testing TS modules + xlsx install](testing-ts-modules.md) — node:test imports pure lib .ts directly; loader hooks in tests/helpers stub server-only for DB libs; xlsx from SheetJS CDN tarball.
 - [Task-env setup](task-env-setup.md) — isolated task environments can start with an empty Postgres and missing node_modules; npm install + apply scripts/db/*.sql (idempotent) before HTTP tests.
 - [Node type-stripping limits](node-type-stripping.md) — unit-testable libs must avoid TS syntax needing transformation (constructor param properties, enums); tsc passes but node --test fails.
 - [Embed security model](embed-security-model.md) — embed token rides the iframe query string so the proxy can pin per-org frame-ancestors CSP; short TTL + per-call origin checks make that acceptable.
