@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/admin-auth";
+import { readSchedulerHealth, STALE_AFTER_MINUTES, type SchedulerHealth } from "@/lib/cron-heartbeat";
 import { listOrganizations } from "@/lib/tenant";
 import { PLAN_LABELS } from "@/lib/plans";
 
@@ -14,11 +15,29 @@ const statusStyles: Record<string, string> = {
   cancelled: "border-red-400/40 text-red-300",
 };
 
+function SchedulerWarning({ health }: { health: SchedulerHealth }) {
+  if (!health.stale) return null;
+  const detail = health.hasHeartbeat
+    ? `Last successful cron hit was ${health.minutesSinceLast} minute${health.minutesSinceLast === 1 ? "" : "s"} ago (expected at least every ${STALE_AFTER_MINUTES}).`
+    : "No external cron hit has ever been recorded.";
+  return <div className="mb-8 rounded-xl border border-red-400/40 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+    <p className="font-bold">Background job scheduler looks stopped</p>
+    <p className="mt-1 text-red-200/80">{detail} Webhook retries and the weekly lead digest depend on the external scheduler. Check that the scheduled deployment running <code className="rounded bg-white/10 px-1">scripts/cron/trigger.mjs</code> still exists and its CRON_SECRET matches the app&apos;s.</p>
+  </div>;
+}
+
 export default async function AdminOrganizationsPage() {
   if (!(await isPlatformAdmin())) redirect("/admin/login?next=/admin/organizations");
-  const organizations = await listOrganizations();
+  const [organizations, schedulerHealth] = await Promise.all([
+    listOrganizations(),
+    readSchedulerHealth().catch((error): SchedulerHealth => {
+      console.error("Failed to read scheduler health", error);
+      return { hasHeartbeat: true, lastSuccessAt: null, minutesSinceLast: 0, stale: false };
+    }),
+  ]);
   return <section className="shell py-16">
     <div className="mx-auto max-w-5xl">
+      <SchedulerWarning health={schedulerHealth} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">MogulForge Admin</p>

@@ -86,6 +86,7 @@ Marketing website for MogulForge with an "AI Revenue Rescue" scan feature. Built
 - Recommended setup: a Replit Scheduled Deployment running `node scripts/cron/trigger.mjs` every 5 minutes, with `CRON_SECRET` (and optionally `CRON_TARGET_URL`) available to it. Any external cron service (cron-job.org, GitHub Actions schedule, uptime pinger) works too — a simple GET to `https://mogulforge.replit.app/api/cron/webhook-deliveries` with the Bearer header is enough.
 - `CRON_SECRET` must be set as a secret on the web app (deployment) so the endpoints accept the Bearer token; without it, only admin-session calls are accepted.
 - Verified end-to-end: seeding a due failed delivery and calling the trigger script (no in-app timer involved) delivers within one pass.
+- Scheduler heartbeat: every successful Bearer-authenticated cron hit upserts `cron_heartbeats` (`scripts/db/008_cron_heartbeat.sql`; admin-session calls don't count). `/admin/organizations` shows a red banner when no hit for 30+ minutes (or never), and the hourly in-app check emails `LEAD_DIGEST_TO` via Resend (6h cooldown in `cron_alert_state`) once the scheduler was previously seen alive. Core logic in `lib/cron-heartbeat-core.ts` (DI, unit-tested), server wrapper `lib/cron-heartbeat.ts` self-creates the tables.
 
 
 ## User preferences

@@ -57,6 +57,13 @@ export async function register() {
       console.error("Weekly lead digest check failed", error);
     }
     try {
+      const { checkSchedulerAndAlert } = await import("./lib/cron-heartbeat");
+      const outcome = await checkSchedulerAndAlert();
+      if (outcome === "sent") console.log("Stale-scheduler alert email sent to admins");
+    } catch (error) {
+      console.error("Scheduler heartbeat check failed", error);
+    }
+    try {
       const { runOrgWeeklyDigests } = await import("./lib/org-alerts");
       const outcomes = await runOrgWeeklyDigests();
       const sent = outcomes.filter((o) => o.status === "sent").length;

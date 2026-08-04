@@ -1,23 +1,29 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
+import { recordHeartbeat } from "@/lib/cron-heartbeat";
 import { processDueDeliveries } from "@/lib/webhooks/outgoing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function authorized(request: Request) {
+/** "external" = bearer CRON_SECRET (the scheduler); "admin" = logged-in admin. */
+async function authorized(request: Request): Promise<"external" | "admin" | false> {
   const secret = process.env.CRON_SECRET;
   if (secret) {
     const header = request.headers.get("authorization");
-    if (header === `Bearer ${secret}`) return true;
+    if (header === `Bearer ${secret}`) return "external";
   }
-  return isAdmin();
+  return (await isAdmin()) ? "admin" : false;
 }
 
 async function run(request: Request) {
-  if (!(await authorized(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await authorized(request);
+  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const result = await processDueDeliveries();
+    // Only external scheduler hits count as heartbeats; a manual admin call
+    // must not mask a dead scheduler.
+    if (auth === "external") await recordHeartbeat("webhook-deliveries");
     return NextResponse.json(result);
   } catch (error) {
     console.error("Webhook delivery processing failed", error);
