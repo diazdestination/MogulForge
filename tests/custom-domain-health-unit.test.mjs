@@ -17,8 +17,8 @@ function domain(overrides = {}) {
   };
 }
 
-function makeDeps({ domains = [], outcomes = {}, sendFails = false } = {}) {
-  const calls = { checked: [], alerts: [] };
+function makeDeps({ domains = [], outcomes = {}, sendFails = false, orgSendFails = false, orgSkips = false } = {}) {
+  const calls = { checked: [], alerts: [], orgAlerts: [] };
   return {
     calls,
     deps: {
@@ -33,6 +33,12 @@ function makeDeps({ domains = [], outcomes = {}, sendFails = false } = {}) {
         if (sendFails) throw new Error("resend down");
         calls.alerts.push(alert);
       },
+      notifyOrg: async (alert) => {
+        if (orgSendFails) throw new Error("resend down");
+        if (orgSkips) return false;
+        calls.orgAlerts.push(alert);
+        return true;
+      },
     },
   };
 }
@@ -40,7 +46,7 @@ function makeDeps({ domains = [], outcomes = {}, sendFails = false } = {}) {
 test("healthy domains: checked, no alerts", async () => {
   const { deps, calls } = makeDeps({ domains: [domain(), domain({ id: "d2", domain: "app.beta.com" })] });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 2, failing: 0, regressions: 0, alertsSent: 0 });
+  assert.deepEqual(result, { checked: 2, failing: 0, regressions: 0, alertsSent: 0, orgAlertsSent: 0 });
   assert.deepEqual(calls.checked, ["d1", "d2"]);
   assert.equal(calls.alerts.length, 0);
 });
@@ -51,7 +57,7 @@ test("active domain flipping healthy -> failing sends one alert", async () => {
     outcomes: { d1: { ok: false, message: "The CNAME record points at wrong.example.com." } },
   });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 1, alertsSent: 1 });
+  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 1, alertsSent: 1, orgAlertsSent: 1 });
   assert.equal(calls.alerts[0].domain, "portal.acme.com");
   assert.match(calls.alerts[0].message, /wrong\.example\.com/);
 });
@@ -62,7 +68,7 @@ test("already-failing domain does not re-alert", async () => {
     outcomes: { d1: { ok: false, message: "Still broken." } },
   });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 0, alertsSent: 0 });
+  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 0, alertsSent: 0, orgAlertsSent: 0 });
   assert.equal(calls.alerts.length, 0);
 });
 
@@ -72,7 +78,7 @@ test("verified-but-not-active domain records failure without alerting", async ()
     outcomes: { d1: { ok: false, message: "No CNAME yet." } },
   });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 0, alertsSent: 0 });
+  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 0, alertsSent: 0, orgAlertsSent: 0 });
   assert.equal(calls.alerts.length, 0);
 });
 
@@ -82,13 +88,13 @@ test("one probe throwing does not stop the pass", async () => {
     outcomes: { d1: new Error("dns exploded") },
   });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 1, failing: 0, regressions: 0, alertsSent: 0 });
+  assert.deepEqual(result, { checked: 1, failing: 0, regressions: 0, alertsSent: 0, orgAlertsSent: 0 });
 });
 
 test("removed-between-list-and-check (null outcome) is skipped", async () => {
   const { deps } = makeDeps({ domains: [domain()], outcomes: { d1: null } });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 0, failing: 0, regressions: 0, alertsSent: 0 });
+  assert.deepEqual(result, { checked: 0, failing: 0, regressions: 0, alertsSent: 0, orgAlertsSent: 0 });
 });
 
 test("alert send failure is swallowed but counted as regression", async () => {
@@ -98,7 +104,79 @@ test("alert send failure is swallowed but counted as regression", async () => {
     sendFails: true,
   });
   const result = await runDomainHealthPass(deps);
-  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 1, alertsSent: 0 });
+  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 1, alertsSent: 0, orgAlertsSent: 1 });
+});
+
+test("healthy -> failing also notifies the owning org", async () => {
+  const { deps, calls } = makeDeps({
+    domains: [domain()],
+    outcomes: { d1: { ok: false, message: "The CNAME record points at wrong.example.com." } },
+  });
+  await runDomainHealthPass(deps);
+  assert.equal(calls.orgAlerts.length, 1);
+  assert.deepEqual(calls.orgAlerts[0], {
+    organizationId: "o1",
+    organizationName: "Acme Roofing",
+    domain: "portal.acme.com",
+    message: "The CNAME record points at wrong.example.com.",
+  });
+});
+
+test("already-failing domain does not re-notify the org", async () => {
+  const { deps, calls } = makeDeps({
+    domains: [domain({ lastCheckError: "CNAME missing" })],
+    outcomes: { d1: { ok: false, message: "Still broken." } },
+  });
+  await runDomainHealthPass(deps);
+  assert.equal(calls.orgAlerts.length, 0);
+});
+
+test("org notification skipped by settings is not counted as sent", async () => {
+  const { deps, calls } = makeDeps({
+    domains: [domain()],
+    outcomes: { d1: { ok: false, message: "Broken." } },
+    orgSkips: true,
+  });
+  const result = await runDomainHealthPass(deps);
+  assert.equal(result.orgAlertsSent, 0);
+  assert.equal(result.alertsSent, 1);
+  assert.equal(calls.orgAlerts.length, 0);
+});
+
+test("org notification failure is swallowed and does not block the admin alert", async () => {
+  const { deps, calls } = makeDeps({
+    domains: [domain()],
+    outcomes: { d1: { ok: false, message: "Broken." } },
+    orgSendFails: true,
+  });
+  const result = await runDomainHealthPass(deps);
+  assert.deepEqual(result, { checked: 1, failing: 1, regressions: 1, alertsSent: 1, orgAlertsSent: 0 });
+  assert.equal(calls.alerts.length, 1);
+});
+
+test("admin alert failure does not block the org notification", async () => {
+  const { deps, calls } = makeDeps({
+    domains: [domain()],
+    outcomes: { d1: { ok: false, message: "Broken." } },
+    sendFails: true,
+  });
+  const result = await runDomainHealthPass(deps);
+  assert.equal(result.orgAlertsSent, 1);
+  assert.equal(calls.orgAlerts.length, 1);
+});
+
+test("client-facing email names the record problem and links the branding page", async () => {
+  const { buildCustomDomainErrorEmail } = await import("../lib/org-alerts-content.ts");
+  const { subject, html } = buildCustomDomainErrorEmail({
+    orgName: "Acme Roofing",
+    domain: "portal.acme.com",
+    message: "The CNAME record points at wrong.example.com.",
+    brandingUrl: "https://app.example.com/dashboard/revenue-rescue/branding",
+  });
+  assert.match(subject, /portal\.acme\.com/);
+  assert.match(html, /wrong\.example\.com/);
+  assert.match(html, /dashboard\/revenue-rescue\/branding/);
+  assert.match(html, /CNAME/);
 });
 
 test("regression email names the domain, org, and details", () => {

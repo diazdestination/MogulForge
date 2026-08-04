@@ -32,6 +32,18 @@ export type DomainHealthDeps = {
   checkDomain: (organizationId: string, domainId: string) => Promise<DomainProbeOutcome>;
   /** Sends the admin regression alert email. Should throw on failure. */
   sendAlert: (alert: DomainRegressionAlert) => Promise<void>;
+  /**
+   * Notifies the org's own notification recipients (honoring their settings).
+   * Returns true when an email was actually sent. Should throw on failure.
+   */
+  notifyOrg: (alert: OrgDomainRegressionAlert) => Promise<boolean>;
+};
+
+export type OrgDomainRegressionAlert = {
+  organizationId: string;
+  organizationName: string;
+  domain: string;
+  message: string;
 };
 
 export type DomainRegressionAlert = {
@@ -46,6 +58,8 @@ export type DomainHealthPassResult = {
   /** Active domains that flipped healthy → failing during this pass. */
   regressions: number;
   alertsSent: number;
+  /** Emails delivered to the owning org's notification recipients. */
+  orgAlertsSent: number;
 };
 
 /** Re-check every monitored domain no more often than this. */
@@ -62,7 +76,7 @@ export function buildDomainRegressionEmail(alert: DomainRegressionAlert): { subj
 
 export async function runDomainHealthPass(deps: DomainHealthDeps): Promise<DomainHealthPassResult> {
   const domains = await deps.listMonitoredDomains();
-  const result: DomainHealthPassResult = { checked: 0, failing: 0, regressions: 0, alertsSent: 0 };
+  const result: DomainHealthPassResult = { checked: 0, failing: 0, regressions: 0, alertsSent: 0, orgAlertsSent: 0 };
 
   for (const domain of domains) {
     let outcome: DomainProbeOutcome;
@@ -87,6 +101,19 @@ export async function runDomainHealthPass(deps: DomainHealthDeps): Promise<Domai
       result.alertsSent++;
     } catch (error) {
       console.error(`Domain regression alert failed for ${domain.domain}`, error);
+    }
+    // The client owns the DNS records — tell them too. Same transition-based
+    // dedupe as the admin alert; a failed admin send never blocks this one.
+    try {
+      const sent = await deps.notifyOrg({
+        organizationId: domain.organizationId,
+        organizationName: domain.organizationName,
+        domain: domain.domain,
+        message: outcome.message,
+      });
+      if (sent) result.orgAlertsSent++;
+    } catch (error) {
+      console.error(`Org domain alert failed for ${domain.domain}`, error);
     }
   }
   return result;

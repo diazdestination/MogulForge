@@ -178,6 +178,28 @@ export function buildCrmConnectionErrorEmail(input: {
   };
 }
 
+export function buildCustomDomainErrorEmail(input: {
+  orgName: string;
+  domain: string;
+  message: string;
+  brandingUrl: string;
+}): AlertEmail {
+  return {
+    subject: `Action needed: your custom domain ${input.domain} stopped resolving`,
+    html: wrap(
+      `⚠️ Custom domain issue — ${input.domain}`,
+      `<p style="margin-top:0;color:#374151;">Your custom domain <strong>${escapeHtml(input.domain)}</strong> was working but just failed its scheduled DNS check. Visitors may not be able to reach your branded portal until the DNS record is fixed.</p>
+       ${detailRows([
+         ["Domain", input.domain],
+         ["What's wrong", input.message.slice(0, 500)],
+       ])}
+       <p style="margin-top:16px;"><a href="${escapeHtml(input.brandingUrl)}" style="background:#111827;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px;">Review DNS setup on the Branding page</a></p>
+       <p style="color:#374151;font-size:13px;">The Branding page shows the exact TXT and CNAME records to set with your DNS provider, and a "Check now" button to re-verify once you've fixed them.</p>`,
+      `Sent by ${input.orgName} alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export type OrgDigestStats = {
   newLeads: number;
   repliesReceived: number;

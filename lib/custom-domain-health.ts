@@ -60,5 +60,21 @@ export async function runCustomDomainHealthPass(): Promise<DomainHealthPassResul
       });
       if (!response.ok) throw new Error(`Resend API error ${response.status}`);
     },
+    notifyOrg: async (alert) => {
+      const { sendOrgAlert } = await import("./org-alerts");
+      const { buildCustomDomainErrorEmail } = await import("./org-alerts-content.ts");
+      const { SITE_URL } = await import("./site");
+      const result = await sendOrgAlert(
+        alert.organizationId,
+        "customDomainAlerts",
+        buildCustomDomainErrorEmail({
+          orgName: alert.organizationName,
+          domain: alert.domain,
+          message: alert.message,
+          brandingUrl: `${SITE_URL}/dashboard/revenue-rescue/branding`,
+        }),
+      );
+      return result.status === "sent";
+    },
   });
 }
