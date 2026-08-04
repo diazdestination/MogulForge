@@ -25,6 +25,7 @@ if (!SECRET) {
 const JOBS = [
   { name: "webhook-deliveries", path: "/api/cron/webhook-deliveries" },
   { name: "lead-digest", path: "/api/cron/lead-digest" },
+  { name: "plan-changes", path: "/api/cron/plan-changes" },
 ];
 
 let failures = 0;

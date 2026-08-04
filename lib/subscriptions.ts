@@ -107,6 +107,9 @@ export type OrgSubscription = {
   billingProvider: string;
   billingRef: string | null;
   notes: string | null;
+  /** Scheduled downgrade target: applied when pendingPlanEffectiveAt passes. */
+  pendingPlanId: string | null;
+  pendingPlanEffectiveAt: string | null;
   updatedAt: string;
 };
 
@@ -120,6 +123,8 @@ function mapSubscription(row: any): OrgSubscription {
     billingProvider: row.billing_provider ?? "manual",
     billingRef: row.billing_ref ?? null,
     notes: row.notes ?? null,
+    pendingPlanId: row.pending_plan_id ?? null,
+    pendingPlanEffectiveAt: row.pending_plan_effective_at ? new Date(row.pending_plan_effective_at).toISOString() : null,
     updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
@@ -155,6 +160,106 @@ export async function setOrgSubscription(
     [organizationId, input.planId, input.status, input.trialEndsAt ?? null, input.billingProvider ?? null, input.billingRef ?? null, input.notes ?? null],
   );
   return mapSubscription(rows[0]);
+}
+
+/** First instant of the next usage period (UTC month start), matching usagePeriodFor. */
+export function nextUsagePeriodStart(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+}
+
+/** Schedules a downgrade: the plan switch is applied when effectiveAt passes. */
+export async function schedulePendingPlanChange(organizationId: string, planId: string, effectiveAt: Date): Promise<OrgSubscription> {
+  const { rows } = await getPool().query(
+    `UPDATE org_subscriptions
+     SET pending_plan_id = $2, pending_plan_effective_at = $3, updated_at = now()
+     WHERE organization_id = $1
+     RETURNING *`,
+    [organizationId, planId, effectiveAt.toISOString()],
+  );
+  if (!rows[0]) throw new Error("Organization has no subscription row to schedule a plan change on.");
+  return mapSubscription(rows[0]);
+}
+
+/** Cancels a scheduled downgrade. Returns the cleared subscription, or null when none existed. */
+export async function clearPendingPlanChange(organizationId: string): Promise<OrgSubscription | null> {
+  const { rows } = await getPool().query(
+    `UPDATE org_subscriptions
+     SET pending_plan_id = NULL, pending_plan_effective_at = NULL, updated_at = now()
+     WHERE organization_id = $1 AND pending_plan_id IS NOT NULL
+     RETURNING *`,
+    [organizationId],
+  );
+  return rows[0] ? mapSubscription(rows[0]) : null;
+}
+
+export type AppliedPlanChange = { organizationId: string; fromPlanId: string; toPlanId: string; effectiveAt: string };
+
+/**
+ * Applies every scheduled plan change whose effective date has passed and
+ * audit-logs each application. Idempotent — applied rows have their pending
+ * columns cleared, so re-runs are no-ops. Safe to call from cron, the in-app
+ * timer, and lazily from page loads.
+ */
+export async function applyDuePendingPlanChanges(now: Date = new Date(), organizationId?: string): Promise<AppliedPlanChange[]> {
+  const params: unknown[] = [now.toISOString()];
+  if (organizationId) params.push(organizationId);
+  const { rows } = await getPool().query(
+    `UPDATE org_subscriptions s
+     SET plan_id = due.to_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL, updated_at = now()
+     FROM (
+       SELECT organization_id, plan_id AS from_plan_id, pending_plan_id AS to_plan_id, pending_plan_effective_at
+       FROM org_subscriptions
+       WHERE pending_plan_id IS NOT NULL AND pending_plan_effective_at <= $1
+         ${organizationId ? "AND organization_id = $2" : ""}
+       FOR UPDATE
+     ) due
+     WHERE s.organization_id = due.organization_id
+     RETURNING due.organization_id, due.from_plan_id, due.to_plan_id, due.pending_plan_effective_at`,
+    params,
+  );
+  const applied: AppliedPlanChange[] = rows.map((row) => ({
+    organizationId: row.organization_id,
+    fromPlanId: row.from_plan_id,
+    toPlanId: row.to_plan_id,
+    effectiveAt: new Date(row.pending_plan_effective_at).toISOString(),
+  }));
+  const { logAudit } = await import("./audit");
+  for (const change of applied) {
+    await logAudit({
+      organizationId: change.organizationId,
+      actorLabel: "system",
+      action: "subscription.scheduled_change_applied",
+      targetType: "org_subscription",
+      targetId: change.organizationId,
+      metadata: { planId: change.toPlanId, previousPlanId: change.fromPlanId, effectiveAt: change.effectiveAt },
+    });
+  }
+  return applied;
+}
+
+export type PendingPlanChange = { planId: string; planName: string; effectiveAt: string };
+
+/**
+ * Returns the org's scheduled plan change for display, lazily applying it
+ * first if the effective date has already passed (so pages never show a
+ * stale "switching on <past date>" banner, even if the cron pass is late).
+ */
+export async function getPendingPlanChange(organizationId: string): Promise<PendingPlanChange | null> {
+  await applyDuePendingPlanChanges(new Date(), organizationId);
+  const { rows } = await getPool().query(
+    `SELECT s.pending_plan_id, s.pending_plan_effective_at, p.name
+     FROM org_subscriptions s
+     LEFT JOIN plan_definitions p ON p.id = s.pending_plan_id
+     WHERE s.organization_id = $1 AND s.pending_plan_id IS NOT NULL`,
+    [organizationId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    planId: row.pending_plan_id,
+    planName: row.name ?? row.pending_plan_id,
+    effectiveAt: new Date(row.pending_plan_effective_at).toISOString(),
+  };
 }
 
 export type CommercialState = {

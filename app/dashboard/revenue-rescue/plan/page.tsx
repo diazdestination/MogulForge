@@ -4,7 +4,7 @@ import { getDashboardContext } from "@/lib/dashboard-context";
 import { RescueDashboardGate } from "@/components/rescue-dashboard-gate";
 import { getUsageStatus } from "@/lib/usage";
 import { SUBSCRIPTION_STATUS_LABELS } from "@/lib/usage-metrics";
-import { listPublicPlans } from "@/lib/subscriptions";
+import { listPublicPlans, getPendingPlanChange } from "@/lib/subscriptions";
 import { MANAGER_ROLES } from "@/lib/roles";
 import { PlanPicker, type PlanCard } from "@/components/plan-picker";
 
@@ -18,6 +18,9 @@ export default async function PlanUsagePage({ searchParams }: { searchParams: Pr
   if (ctx.kind === "unauthenticated") redirect("/login");
   if (ctx.kind !== "ok") return <RescueDashboardGate ctx={ctx} />;
 
+  // getPendingPlanChange also applies a scheduled downgrade lazily when its
+  // date has passed, so run it before reading usage/plan state.
+  const pendingChange = await getPendingPlanChange(ctx.active.id);
   const [usage, publicPlans] = await Promise.all([getUsageStatus(ctx.active.id), listPublicPlans()]);
   if (!usage) return null;
 
@@ -95,7 +98,7 @@ export default async function PlanUsagePage({ searchParams }: { searchParams: Pr
           })}
         </div>
 
-        <PlanPicker orgId={ctx.active.id} currentPlanId={usage.plan.id} plans={planCards} canManage={canManage} />
+        <PlanPicker orgId={ctx.active.id} currentPlanId={usage.plan.id} plans={planCards} canManage={canManage} pendingChange={pendingChange} />
 
         <p className="mt-8 text-xs text-white/40">
           Limits protect your plan, never your compliance: opt-out processing, do-not-contact list updates, and account-closure

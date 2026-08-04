@@ -64,6 +64,13 @@ export async function register() {
       console.error("Scheduler heartbeat check failed", error);
     }
     try {
+      const { applyDuePendingPlanChanges } = await import("./lib/subscriptions");
+      const applied = await applyDuePendingPlanChanges();
+      if (applied.length > 0) console.log(`Applied ${applied.length} scheduled plan change${applied.length === 1 ? "" : "s"}`);
+    } catch (error) {
+      console.error("Scheduled plan change pass failed", error);
+    }
+    try {
       const { runOrgWeeklyDigests } = await import("./lib/org-alerts");
       const outcomes = await runOrgWeeklyDigests();
       const sent = outcomes.filter((o) => o.status === "sent").length;
