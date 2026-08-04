@@ -14,8 +14,7 @@ async function authorized(request: Request) {
   return isAdmin();
 }
 
-/** Retries due outgoing webhook deliveries (also runs on an in-app timer). */
-export async function POST(request: Request) {
+async function run(request: Request) {
   if (!(await authorized(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const result = await processDueDeliveries();
@@ -24,4 +23,14 @@ export async function POST(request: Request) {
     console.error("Webhook delivery processing failed", error);
     return NextResponse.json({ error: "Webhook delivery processing failed" }, { status: 500 });
   }
+}
+
+/** Retries due outgoing webhook deliveries (also runs on an in-app timer). */
+export async function POST(request: Request) {
+  return run(request);
+}
+
+/** GET support for simple external schedulers that can only ping a URL. */
+export async function GET(request: Request) {
+  return run(request);
 }

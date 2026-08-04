@@ -73,7 +73,18 @@ Marketing website for MogulForge with an "AI Revenue Rescue" scan feature. Built
 ## Environment
 - `OPENAI_API_KEY` required for the Revenue Rescue scan API; `OPENAI_MODEL` optional.
 - `DATABASE_URL` (Postgres), `SESSION_SECRET` (cookie signing), `ADMIN_PASSWORD` (platform-admin password login).
-- Weekly lead digest: `RESEND_API_KEY` + `LEAD_DIGEST_TO` (recipient) required; `LEAD_DIGEST_FROM` optional (defaults to `onboarding@resend.dev` until the domain is verified in Resend); `CRON_SECRET` optional bearer token for triggering `POST /api/cron/lead-digest` externally. An hourly in-app check (`instrumentation.ts`) sends the digest at most once a week and only when there are new leads.
+- Weekly lead digest: `RESEND_API_KEY` + `LEAD_DIGEST_TO` (recipient) required; `LEAD_DIGEST_FROM` optional (defaults to `onboarding@resend.dev` until the domain is verified in Resend); `CRON_SECRET` bearer token for triggering the cron endpoints externally (see External cron below). An hourly in-app check (`instrumentation.ts`) sends the digest at most once a week and only when there are new leads.
+
+
+## External cron (webhook retries & lead digest while the app is idle)
+- Why: the app publishes as an autoscale deployment, so the in-app timers in `instrumentation.ts` only run while the process is awake. An external scheduler must hit the cron endpoints so due webhook retries and the weekly digest fire even after the app has been idle.
+- Endpoints (both accept `POST` and `GET`, auth `Authorization: Bearer $CRON_SECRET`, or a platform-admin session):
+  - `/api/cron/webhook-deliveries` — retries due outgoing webhook deliveries (`{"processed": n}`)
+  - `/api/cron/lead-digest` — weekly digest check (self-throttled to once a week; POST body `{"force":true}` overrides)
+- Trigger script: `node scripts/cron/trigger.mjs` calls both endpoints against `CRON_TARGET_URL` (defaults to the production URL `https://mogulforge.replit.app`) using `CRON_SECRET`; exits non-zero on any failure.
+- Recommended setup: a Replit Scheduled Deployment running `node scripts/cron/trigger.mjs` every 5 minutes, with `CRON_SECRET` (and optionally `CRON_TARGET_URL`) available to it. Any external cron service (cron-job.org, GitHub Actions schedule, uptime pinger) works too — a simple GET to `https://mogulforge.replit.app/api/cron/webhook-deliveries` with the Bearer header is enough.
+- `CRON_SECRET` must be set as a secret on the web app (deployment) so the endpoints accept the Bearer token; without it, only admin-session calls are accepted.
+- Verified end-to-end: seeding a due failed delivery and calling the trigger script (no in-app timer involved) delivers within one pass.
 
 
 ## User preferences
