@@ -17,7 +17,8 @@ async function saveReport(url: string, email: string, report: VisibilityReport):
     if (reportId) {
       // sendLeadEmails never throws — email failures are logged and must not
       // break the scan response.
-      await sendLeadEmails({ reportId, email, url, score: report.score, summary: report.summary });
+      // Pass the full report so the prospect email can attach the branded PDF.
+      await sendLeadEmails({ reportId, email, url, score: report.score, summary: report.summary }, report);
     }
     return reportId;
   } catch (error) {

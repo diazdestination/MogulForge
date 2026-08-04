@@ -149,6 +149,33 @@ test("isSenderRejection: 403 or from/domain 422s only — 500s stay transient", 
   assert.equal(isSenderRejection(500, "boom"), false);
 });
 
+test("renderPdf attachment rides the prospect email only", async () => {
+  const stub = makeFetch();
+  const d = deps(makeStore(), stub);
+  d.renderPdf = async () => ({ filename: "report.pdf", content: "cGRm" });
+  await sendLeadEmailsCore(LEAD, d);
+  assert.equal(stub.sent.length, 2);
+  assert.deepEqual(stub.sent[0].attachments, [{ filename: "report.pdf", content: "cGRm" }]);
+  assert.equal("attachments" in stub.sent[1], false); // hot alert has no attachment
+});
+
+test("renderPdf failure or null still sends the email without an attachment", async () => {
+  const stub = makeFetch();
+  const d = deps(makeStore(), stub);
+  d.renderPdf = async () => {
+    throw new Error("pdf render exploded");
+  };
+  await sendLeadEmailsCore(LEAD, d);
+  assert.equal(stub.sent.length, 2);
+  assert.equal("attachments" in stub.sent[0], false);
+
+  const stub2 = makeFetch();
+  const d2 = deps(makeStore(), stub2);
+  d2.renderPdf = async () => null; // e.g. over the size limit
+  await sendLeadEmailsCore(LEAD, d2);
+  assert.equal("attachments" in stub2.sent[0], false);
+});
+
 test("DB claim failure is swallowed — scan response path never breaks", async () => {
   const stub = makeFetch();
   const badQuery = async () => {

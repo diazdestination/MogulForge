@@ -25,6 +25,18 @@ export interface LeadEmailDeps {
   fetchFn: typeof fetch;
   env: Env;
   siteUrl: string;
+  /**
+   * Optionally renders the branded PDF report for the prospect email as a
+   * Resend attachment ({ filename, content: base64 }). Returning null or
+   * throwing skips the attachment — the email still sends without it.
+   */
+  renderPdf?: () => Promise<EmailAttachment | null>;
+}
+
+export interface EmailAttachment {
+  filename: string;
+  /** Base64-encoded file content, per the Resend attachments API. */
+  content: string;
 }
 
 export interface LeadEmailInput {
@@ -69,7 +81,7 @@ export function isSenderRejection(status: number, body: string): boolean {
 
 async function sendViaResend(
   deps: LeadEmailDeps,
-  { to, subject, html }: { to: string; subject: string; html: string },
+  { to, subject, html, attachments }: { to: string; subject: string; html: string; attachments?: EmailAttachment[] },
 ) {
   const apiKey = deps.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
@@ -81,7 +93,14 @@ async function sendViaResend(
     deps.fetchFn("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: fromAddress, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
+      body: JSON.stringify({
+        from: fromAddress,
+        to,
+        subject,
+        html,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      }),
       // Strict timeout so a slow email provider can never stall the scan response.
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
@@ -189,6 +208,18 @@ export async function sendLeadEmailsCore(lead: LeadEmailInput, deps: LeadEmailDe
   }
   const reportUrl = `${deps.siteUrl}/ai-visibility/r/${lead.reportId}`;
 
+  // Render the branded PDF attachment best-effort: any failure is logged and
+  // the prospect email still sends without it.
+  let attachments: EmailAttachment[] | undefined;
+  if (deps.renderPdf) {
+    try {
+      const attachment = await deps.renderPdf();
+      if (attachment) attachments = [attachment];
+    } catch (error) {
+      console.error(`Failed to render PDF attachment for report ${lead.reportId}; sending email without it`, error);
+    }
+  }
+
   try {
     if (await claimSend(deps, lead.reportId, "prospect_email_sent_at")) {
       try {
@@ -196,6 +227,7 @@ export async function sendLeadEmailsCore(lead: LeadEmailInput, deps: LeadEmailDe
           to: lead.email,
           subject: `Your AI Visibility Score: ${lead.score}/100 — full report inside`,
           html: prospectHtml(deps, lead, reportUrl),
+          attachments,
         });
       } catch (error) {
         console.error(`Failed to send prospect report email for report ${lead.reportId}`, error);
