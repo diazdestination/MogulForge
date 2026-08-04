@@ -334,6 +334,103 @@ test("cron: orgs without revenue_rescue entitlement are skipped — no opportuni
   );
 });
 
+test("signal filter: suppressed lead with stale estimate does NOT appear as an opportunity", async () => {
+  // Insert a lead that would qualify for stale_estimate except suppressed = true.
+  const suppressedStaleId = await insertLead({
+    firstName: "Suppressed",
+    lastName: "Stale",
+    pipelineStage: "estimate_issued",
+    estimateDate: new Date(Date.now() - 70 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    estimatedValue: 8000,
+    suppressed: true,
+  });
+
+  // Run the discovery cron so any qualifying leads are surfaced.
+  const cronRes = await triggerDiscoveryCron();
+  assert.equal(cronRes.status, 200, JSON.stringify(cronRes.json));
+
+  // The suppressed lead must not appear in any opportunity (new or otherwise).
+  const { rows } = await db.query(
+    `SELECT id FROM org_opportunities
+     WHERE organization_id = $1 AND lead_id = $2`,
+    [state.orgId, suppressedStaleId],
+  );
+  assert.equal(
+    rows.length,
+    0,
+    `Suppressed lead ${suppressedStaleId} must not produce any discovery opportunity`,
+  );
+});
+
+test("signal filter: won and lost leads with old estimates do NOT appear as opportunities", async () => {
+  // Both leads have estimate_date > 60 days old — they would qualify if they
+  // were in 'estimate_issued' stage.  With 'won'/'lost' they must be excluded.
+  const wonLeadId = await insertLead({
+    firstName: "Won",
+    lastName: "Customer",
+    pipelineStage: "won",
+    estimateDate: new Date(Date.now() - 80 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    estimatedValue: 12000,
+    suppressed: false,
+  });
+  const lostLeadId = await insertLead({
+    firstName: "Lost",
+    lastName: "Customer",
+    pipelineStage: "lost",
+    estimateDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    estimatedValue: 6000,
+    suppressed: false,
+  });
+
+  await triggerDiscoveryCron();
+
+  const { rows: wonRows } = await db.query(
+    `SELECT id FROM org_opportunities WHERE organization_id = $1 AND lead_id = $2`,
+    [state.orgId, wonLeadId],
+  );
+  assert.equal(
+    wonRows.length,
+    0,
+    `Won lead ${wonLeadId} must not produce any discovery opportunity`,
+  );
+
+  const { rows: lostRows } = await db.query(
+    `SELECT id FROM org_opportunities WHERE organization_id = $1 AND lead_id = $2`,
+    [state.orgId, lostLeadId],
+  );
+  assert.equal(
+    lostRows.length,
+    0,
+    `Lost lead ${lostLeadId} must not produce any discovery opportunity`,
+  );
+});
+
+test("signal filter: high-score suppressed lead does NOT appear as hot_uncontacted", async () => {
+  // Score ≥ 7, early stage, no messages — would qualify for hot_uncontacted,
+  // but suppressed = true must exclude it entirely.
+  const suppressedHotId = await insertLead({
+    firstName: "Suppressed",
+    lastName: "Hot",
+    pipelineStage: "imported",
+    score: 10,
+    category: "hot",
+    suppressed: true,
+  });
+
+  await triggerDiscoveryCron();
+
+  const { rows } = await db.query(
+    `SELECT id FROM org_opportunities
+     WHERE organization_id = $1 AND lead_id = $2`,
+    [state.orgId, suppressedHotId],
+  );
+  assert.equal(
+    rows.length,
+    0,
+    `Suppressed high-score lead ${suppressedHotId} must not produce any discovery opportunity`,
+  );
+});
+
 test("cron: re-running discovery does not create duplicate 'new' opportunities for the same lead+kind", async () => {
   // Insert a fresh qualifying lead that has never been touched by the earlier tests.
   const freshLeadId = await insertLead({
