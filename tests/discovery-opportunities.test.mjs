@@ -108,6 +108,7 @@ before(async () => {
   });
   assert.equal(provision.status, 201, JSON.stringify(provision.json));
   state.orgId = provision.json.organizationId;
+  state.adminCookie = adminLogin.cookie;
 
   // Activate the owner so we can use session auth on the opportunities API.
   const accept = await request("/api/invites/accept", {
@@ -268,6 +269,69 @@ test("PATCH opportunity: rejected for opportunity belonging to a different org",
   );
   // 401 (unauthenticated), 403 (not a member), or 404 (not found) — all acceptable.
   assert.ok([401, 403, 404].includes(res.status), `Expected 401/403/404, got ${res.status}`);
+});
+
+test("cron: orgs without revenue_rescue entitlement are skipped — no opportunities created", async () => {
+  assert.ok(state.adminCookie, "adminCookie must be set from before()");
+
+  // Provision a second org with no revenue_rescue module.
+  const noRescueRun = `${RUN}x`;
+  const provision = await request("/api/admin/organizations", {
+    method: "POST",
+    cookie: state.adminCookie,
+    body: {
+      name: `Test ${noRescueRun} No Rescue`,
+      slug: `test-${noRescueRun}`,
+      plan: "starter",
+      modules: [],
+      usageLimits: { seats: 2 },
+      allowedOrigins: [],
+      owner: { email: `owner-${noRescueRun}@disc-test.local`, name: "No Rescue Owner" },
+    },
+  });
+  assert.equal(provision.status, 201, JSON.stringify(provision.json));
+  const noRescueOrgId = provision.json.organizationId;
+
+  // Confirm the org truly has no revenue_rescue entitlement.
+  const { rows: entRows } = await db.query(
+    `SELECT 1 FROM entitlements WHERE organization_id = $1 AND feature_key = 'revenue_rescue' AND enabled = true`,
+    [noRescueOrgId],
+  );
+  assert.equal(entRows.length, 0, "org must not have an active revenue_rescue entitlement");
+
+  // Insert a stale-estimate lead that would normally qualify for discovery.
+  await db.query(
+    `INSERT INTO rescue_leads
+       (organization_id, first_name, last_name, pipeline_stage, estimate_date,
+        estimated_value, score, category, suppressed)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      noRescueOrgId,
+      "Excluded",
+      "Lead",
+      "estimate_issued",
+      new Date(Date.now() - 65 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      4000,
+      null,
+      null,
+      false,
+    ],
+  );
+
+  // Trigger the cron — the org without revenue_rescue must be excluded.
+  const res = await triggerDiscoveryCron();
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+
+  // No opportunities must have been created for the excluded org.
+  const { rows: oppRows } = await db.query(
+    `SELECT id FROM org_opportunities WHERE organization_id = $1`,
+    [noRescueOrgId],
+  );
+  assert.equal(
+    oppRows.length,
+    0,
+    `Expected 0 opportunities for non-entitled org, got ${oppRows.length}`,
+  );
 });
 
 test("cron: re-running discovery does not create duplicate 'new' opportunities for the same lead+kind", async () => {
