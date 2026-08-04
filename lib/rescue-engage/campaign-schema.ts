@@ -49,6 +49,25 @@ export function isWithinQuietHours(schedule: Pick<CampaignSchedule, "quietHoursS
   return start < end ? hour >= start && hour < end : hour >= start || hour < end;
 }
 
+/**
+ * The current hour (0-23) in an IANA time zone, e.g. "America/Los_Angeles".
+ * Falls back to the server-local hour when the zone is missing or invalid —
+ * loudly, via console.warn, never silently for a bad configured zone.
+ */
+export function hourInTimeZone(now: Date, timeZone: string | null | undefined): number {
+  if (!timeZone) return now.getHours();
+  try {
+    const hour = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" })
+      .format(now);
+    const parsed = Number.parseInt(hour, 10);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 23) return parsed;
+    return now.getHours();
+  } catch {
+    console.warn(`Invalid organization timezone "${timeZone}" — falling back to server-local time for quiet hours.`);
+    return now.getHours();
+  }
+}
+
 export type CampaignSchedule = {
   startDate: string | null; // ISO date; null = start on activation
   quietHoursStart: number; // local hour 0-23 — no sends at/after this hour

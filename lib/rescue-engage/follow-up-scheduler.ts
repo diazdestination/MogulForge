@@ -4,7 +4,7 @@ import { getEffectiveBranding } from "../branding";
 import { buildTemplateDraft } from "../rescue-analysis/message-content.ts";
 import { mapLeadFacts, LEAD_FACT_COLUMNS } from "../rescue-analysis/store";
 import { recordUsage, requireActionCapacity } from "../usage";
-import type { CampaignTone } from "./campaign-schema.ts";
+import { hourInTimeZone, type CampaignTone } from "./campaign-schema.ts";
 import {
   insertMessage,
   logActivity,
@@ -28,7 +28,9 @@ import {
  * - Stop conditions are enforced: reply (lead status leaves 'messaged'),
  *   appointment_booked (any non-cancelled appointment), max_attempts.
  * - Quiet hours from the campaign schedule are respected — nothing sends at or
- *   after quietHoursStart, or before quietHoursEnd (server-local time).
+ *   after quietHoursStart, or before quietHoursEnd — evaluated in the
+ *   organization's configured time zone (organizations.timezone), not the
+ *   server's clock.
  * - Plan capacity is checked per campaign; a campaign over its send limit is
  *   skipped this pass (never partially over-sent), and every simulated send is
  *   metered like activation sends are.
@@ -64,8 +66,10 @@ export async function runFollowUpPass(now: Date = new Date()): Promise<FollowUpP
 
   const { rows } = await getPool().query(
     `SELECT c.organization_id, c.id, c.name, c.channel, c.tone, c.objective, c.schedule,
-       c.follow_up_delay_days, c.max_attempts, c.stop_conditions, c.mode, c.status
+       c.follow_up_delay_days, c.max_attempts, c.stop_conditions, c.mode, c.status,
+       o.timezone AS org_timezone
      FROM rescue_campaigns c
+     JOIN organizations o ON o.id = c.organization_id
      WHERE c.status = 'active' AND c.mode = 'simulation'
        AND EXISTS (
          SELECT 1 FROM rescue_campaign_leads cl
@@ -82,7 +86,7 @@ export async function runFollowUpPass(now: Date = new Date()): Promise<FollowUpP
     const schedule = row.schedule ?? {};
     const quietStart = Number.isInteger(schedule.quietHoursStart) ? schedule.quietHoursStart : 20;
     const quietEnd = Number.isInteger(schedule.quietHoursEnd) ? schedule.quietHoursEnd : 8;
-    if (isQuietHour(now.getHours(), quietStart, quietEnd)) {
+    if (isQuietHour(hourInTimeZone(now, row.org_timezone), quietStart, quietEnd)) {
       result.skipped += 1;
       continue;
     }

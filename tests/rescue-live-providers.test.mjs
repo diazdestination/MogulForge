@@ -14,7 +14,7 @@ import {
   validateResendSignature,
   validateTwilioSignature,
 } from "../lib/rescue-engage/providers.ts";
-import { isWithinQuietHours } from "../lib/rescue-engage/campaign-schema.ts";
+import { hourInTimeZone, isWithinQuietHours } from "../lib/rescue-engage/campaign-schema.ts";
 
 const PROVIDER_ENV = [
   "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "TWILIO_MESSAGING_SERVICE_SID",
@@ -120,4 +120,27 @@ test("quiet hours wrap midnight and can be disabled", () => {
   assert.equal(isWithinQuietHours(schedule, 8), false, "end hour is sending-allowed");
   assert.equal(isWithinQuietHours({ quietHoursStart: 9, quietHoursEnd: 17 }, 12), true, "non-wrapping window");
   assert.equal(isWithinQuietHours({ quietHoursStart: 9, quietHoursEnd: 9 }, 9), false, "equal start/end disables quiet hours");
+});
+
+test("hourInTimeZone converts to the org's local hour", () => {
+  // 2026-08-04 03:30 UTC → 23:30 previous day in New York (EDT, UTC-4), 20:30 in LA (PDT, UTC-7).
+  const now = new Date("2026-08-04T03:30:00Z");
+  assert.equal(hourInTimeZone(now, "America/New_York"), 23);
+  assert.equal(hourInTimeZone(now, "America/Los_Angeles"), 20);
+  assert.equal(hourInTimeZone(now, "UTC"), 3);
+  // Midnight must come back as 0, not 24 (h23 cycle).
+  assert.equal(hourInTimeZone(new Date("2026-08-04T04:00:00Z"), "America/New_York"), 0);
+  // Winter (EST, UTC-5) — DST is respected.
+  assert.equal(hourInTimeZone(new Date("2026-01-15T03:30:00Z"), "America/New_York"), 22);
+  // Missing or invalid zones fall back to server-local time.
+  assert.equal(hourInTimeZone(now, null), now.getHours());
+  assert.equal(hourInTimeZone(now, "Not/A_Zone"), now.getHours());
+});
+
+test("org-timezone quiet hours: 9pm LA is quiet even when the server clock says 4am UTC", () => {
+  const schedule = { quietHoursStart: 20, quietHoursEnd: 8 };
+  const now = new Date("2026-08-04T04:00:00Z"); // 21:00 in LA
+  assert.equal(isWithinQuietHours(schedule, hourInTimeZone(now, "America/Los_Angeles")), true);
+  assert.equal(isWithinQuietHours(schedule, hourInTimeZone(now, "UTC")), true, "4am UTC is also inside the window");
+  assert.equal(isWithinQuietHours(schedule, hourInTimeZone(new Date("2026-08-04T19:00:00Z"), "America/Los_Angeles")), false, "noon in LA sends");
 });

@@ -2,7 +2,7 @@ import "server-only";
 import { getPool } from "../db";
 import { buildTemplateDraft } from "../rescue-analysis/message-content.ts";
 import { mapLeadFacts, LEAD_FACT_COLUMNS } from "../rescue-analysis/store";
-import { isWithinQuietHours, type CampaignTone } from "./campaign-schema.ts";
+import { hourInTimeZone, isWithinQuietHours, type CampaignTone } from "./campaign-schema.ts";
 import { getProviderStatus, providerName, sendLiveMessage, ProviderSendError } from "./providers.ts";
 import { computeAudience } from "./eligibility.ts";
 import {
@@ -77,10 +77,16 @@ export async function activateCampaign(input: {
       `No ${campaign.channel === "sms" ? "SMS" : "email"} provider is connected, so live sending is unavailable. Activate in Simulation Mode instead — no messages will be sent.`,
     );
   }
-  if (mode === "live" && isWithinQuietHours(campaign.schedule, new Date().getHours())) {
-    throw new ActivationError(
-      `It is currently within this campaign's quiet hours (${campaign.schedule.quietHoursStart}:00–${campaign.schedule.quietHoursEnd}:00), so live sends are blocked right now. Activate outside quiet hours, or adjust them in the campaign settings.`,
-    );
+  if (mode === "live") {
+    // Quiet hours are evaluated in the organization's configured time zone,
+    // not the server's clock.
+    const tzResult = await getPool().query(`SELECT timezone FROM organizations WHERE id = $1`, [input.organizationId]);
+    const orgTimezone: string | null = tzResult.rows[0]?.timezone ?? null;
+    if (isWithinQuietHours(campaign.schedule, hourInTimeZone(new Date(), orgTimezone))) {
+      throw new ActivationError(
+        `It is currently within this campaign's quiet hours (${campaign.schedule.quietHoursStart}:00–${campaign.schedule.quietHoursEnd}:00${orgTimezone ? ` ${orgTimezone}` : ""}), so live sends are blocked right now. Activate outside quiet hours, or adjust them in the campaign settings.`,
+      );
+    }
   }
   if (mode !== "live") mode = "simulation";
 
