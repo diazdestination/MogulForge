@@ -26,7 +26,10 @@ export const GET = guard(async (request: Request, { params }: Ctx) => {
   const { orgId, provider } = await params;
   if (!isOrgCalendarProvider(provider)) throw new ApiError(404, "Unknown calendar provider.");
   const { org, user } = await requireMember(orgId, MANAGER_ROLES);
-  await requireEntitlement(org.id, "appointments");
+  // Connecting an account is foundational (identity + calendar groundwork used
+  // by onboarding), so it's gated on the base module — not on "appointments",
+  // which starter plans don't include. Appointment sync itself stays gated.
+  await requireEntitlement(org.id, "revenue_rescue");
   if (!getOAuthAppCredentials(provider)) {
     throw new ApiError(
       503,

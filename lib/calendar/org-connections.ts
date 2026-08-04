@@ -72,6 +72,8 @@ type TokenResponse = {
   refresh_token?: string;
   expires_in?: number;
   id_token?: string;
+  /** Space-separated scopes the provider actually granted. */
+  scope?: string;
   error?: string;
   error_description?: string;
 };
@@ -129,14 +131,15 @@ export async function completeOrgCalendarConnection(input: {
   const expiresAt = tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : null;
   await getPool().query(
     `INSERT INTO org_calendar_connections
-       (organization_id, provider, account_email, access_token_enc, refresh_token_enc, expires_at, connected_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (organization_id, provider, account_email, access_token_enc, refresh_token_enc, expires_at, connected_by, granted_scopes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (organization_id, provider) DO UPDATE SET
        account_email = EXCLUDED.account_email,
        access_token_enc = EXCLUDED.access_token_enc,
        refresh_token_enc = COALESCE(EXCLUDED.refresh_token_enc, org_calendar_connections.refresh_token_enc),
        expires_at = EXCLUDED.expires_at,
        connected_by = EXCLUDED.connected_by,
+       granted_scopes = COALESCE(EXCLUDED.granted_scopes, org_calendar_connections.granted_scopes),
        updated_at = now()`,
     [
       input.organizationId,
@@ -146,6 +149,7 @@ export async function completeOrgCalendarConnection(input: {
       tokens.refresh_token ? encryptToken(tokens.refresh_token) : null,
       expiresAt,
       input.connectedBy,
+      typeof tokens.scope === "string" ? tokens.scope.slice(0, 2000) : null,
     ],
   );
   return { accountEmail };

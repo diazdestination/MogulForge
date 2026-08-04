@@ -63,6 +63,9 @@ export function buildAuthorizationUrl(
     // Offline access + forced consent so Google always returns a refresh token.
     params.set("access_type", "offline");
     params.set("prompt", "consent");
+    // Groundwork for incremental authorization: future features (e.g. Gmail
+    // sending) can request extra scopes without losing already-granted ones.
+    params.set("include_granted_scopes", "true");
   }
   return `${endpoint.authUrl}?${params.toString()}`;
 }

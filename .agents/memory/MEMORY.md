@@ -1,5 +1,5 @@
 - [Source repo location](source-repo.md) — real code lives in diazdestination/MogulForge branch agent/build-mogulforge-website, NOT the originally imported diazadam/RoofStorm repo.
-- [Lint purity rule in server components](lint-server-component-purity.md) — react-hooks/purity errors on Date.now() in app/ pages; move time logic into lib helpers, and lint app/lib/components only.
+- [Lint rules: purity & effects](lint-server-component-purity.md) — Date.now() banned in app/ pages (move to lib); effects must start async loads via `void Promise.resolve().then(load)`, not `void load()`.
 - [Resend email setup](resend-email.md) — digest sends from onboarding@resend.dev until domain verifies; autoscale means the in-app timer only fires while warm.
 - [Testing TS modules + xlsx install](testing-ts-modules.md) — node:test imports pure lib .ts directly; loader hooks in tests/helpers stub server-only for DB libs; xlsx from SheetJS CDN tarball.
 - [Task-env setup](task-env-setup.md) — isolated task environments can start with an empty Postgres and missing node_modules; npm install + apply scripts/db/*.sql (idempotent) before HTTP tests.
@@ -12,6 +12,7 @@
 - [Live messaging providers](live-messaging-providers.md) — env-driven Twilio/Resend outreach adapters; never reuse the digest RESEND_API_KEY for outreach; webhooks 404 while unconfigured.
 - [Portal chrome host-gating](portal-chrome-gating.md) — custom-domain chrome swaps in the root layout; marketing routes are blocked in the DB-free proxy via an allow-list of portal path prefixes.
 - [Per-org calendar OAuth](per-org-calendar-oauth.md) — org's own OAuth connection always wins over the workspace connector; a broken org connection must never fall back (cross-tenant calendar leak).
-- [Calendar connectors](calendar-connectors.md) — Google/Outlook/Calendly sync uses workspace-level Replit connectors (no per-org OAuth); org settings pick the sync target; connector state resolved live, fail-closed.
+- [Calendar connectors](calendar-connectors.md) — workspace-level Replit connectors are the LEGACY FALLBACK only; per-org OAuth (see per-org-calendar-oauth) wins when present; connector state resolved live, fail-closed.
 - [OG image rendering pitfalls](og-image-satori.md) — inline remote logos as data URLs with explicit dims or Satori 500s; portal proxy allow-list must include /opengraph-image.
 - [Test suite serialization](test-suite-serialization.md) — never run `npm test` (all files parallel) against next dev; provisioning stampedes hang the server. Run test files one at a time.
+- [CRM pull semantics](crm-pull-semantics.md) — inbound CRM pull only updates EXISTING leads; unmatched contacts are never created. UI must not promise "import via CRM".

@@ -16,7 +16,8 @@ async function signupAction(formData: FormData) {
   });
   if (!result.ok) redirect(`/signup?error=${encodeURIComponent(result.error)}`);
   await createUserSession(result.userId);
-  redirect("/account");
+  // New accounts flow straight into the guided onboarding (skippable/resumable).
+  redirect("/onboarding");
 }
 
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

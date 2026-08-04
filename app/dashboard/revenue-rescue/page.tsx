@@ -5,6 +5,7 @@ import { getDashboardContext } from "@/lib/dashboard-context";
 import { RescueDashboardGate } from "@/components/rescue-dashboard-gate";
 import { RescueOverviewPanel } from "@/components/rescue-overview-panel";
 import { getUsageStatus } from "@/lib/usage";
+import { getOnboardingRecord } from "@/lib/onboarding";
 
 export const metadata: Metadata = { title: "Revenue Rescue — Dashboard", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -17,11 +18,24 @@ export default async function RevenueRescueOverviewPage({ searchParams }: { sear
   if (ctx.kind !== "ok") return <RescueDashboardGate ctx={ctx} />;
 
   const usage = await getUsageStatus(ctx.active.id).catch(() => null);
+  // Only nags orgs that actually entered the guided flow — legacy orgs have no row.
+  const onboarding = await getOnboardingRecord(ctx.active.id).catch(() => null);
+  const showOnboardingBanner = !!onboarding?.started && !onboarding.completedAt;
   const worstWarning = usage && !usage.limitExempt ? Math.max(0, ...usage.warnings.map((w) => w.warning ?? 0)) : 0;
 
   return (
     <section className="shell py-10">
       <div className="mx-auto max-w-6xl">
+        {showOnboardingBanner && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-forge-lime/40 bg-forge-lime/5 px-5 py-4 text-sm text-white/80">
+            <span>
+              <strong className="text-forge-lime">Finish setting up.</strong> Connect Google, bring your leads in, and hook up your website — it takes a few minutes.
+            </span>
+            <Link href={`/onboarding?org=${ctx.active.id}`} className="rounded-full bg-forge-lime px-5 py-2 text-xs font-bold text-black transition hover:brightness-110">
+              Resume setup
+            </Link>
+          </div>
+        )}
         {usage?.gateBlock.blocked && (
           <div className="mb-6 rounded-xl border border-red-400/40 bg-red-400/5 px-5 py-4 text-sm text-red-300">
             {usage.gateBlock.reason} Opt-out processing, suppression updates, and data exports keep working.

@@ -8,3 +8,6 @@ Rule: calendar provider auth uses workspace-level Replit connectors (`google-cal
 **Why:** Replit connectors authorize one account for the whole workspace; building true per-org OAuth would require our own Google/Microsoft client credentials, which the project doesn't have.
 
 **How to apply:** any new provider sync should follow the same shape: live connection state resolved honestly at request time (never hardcoded "connected"), org preference in settings jsonb, best-effort push that never fails the primary write, inbound pull via a `/api/cron/*` endpoint + in-app timer. Connector calls fail closed (report not connected).
+
+## Update (Aug 2026)
+Workspace connectors are now the legacy fallback path only. Per-org OAuth connections (org_calendar_connections, see per-org-calendar-oauth.md) always take precedence when present. The rest of this file describes the fallback behavior.
