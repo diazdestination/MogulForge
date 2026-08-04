@@ -101,6 +101,26 @@ export function buildLeadFactSheet(facts: LeadFacts): LeadFactSheet {
 export const SMS_OPT_OUT = "Reply STOP to opt out.";
 export const EMAIL_OPT_OUT = "If you'd rather not hear from us, just reply \"unsubscribe\" and we'll remove you right away.";
 
+/**
+ * Enforces mandatory opt-out language on a draft AFTER schema validation.
+ * AI output is never trusted to include it — if the required phrasing is
+ * missing from an SMS or email body, it is appended deterministically.
+ * Non-conversational types (call scripts, notes, …) pass through unchanged.
+ */
+export function ensureOptOutLanguage(type: MessageType, content: Record<string, unknown>): Record<string, unknown> {
+  if (type === "sms") {
+    const body = String(content.body ?? "");
+    if (body.toLowerCase().includes("reply stop")) return content;
+    return parseMessageContent("sms", { body: `${body.trim()} ${SMS_OPT_OUT}`.trim() });
+  }
+  if (type === "email") {
+    const body = String(content.body ?? "");
+    const lower = body.toLowerCase();
+    if (lower.includes("unsubscribe") || lower.includes("opt out") || lower.includes("opt-out")) return content;
+    return parseMessageContent("email", { subject: String(content.subject ?? ""), body: `${body.trimEnd()}\n\n${EMAIL_OPT_OUT}` });
+  }
+  return content;
+}
 /** Compliance warnings surfaced with a draft (never blocking — suppression blocks earlier). */
 export function draftWarnings(facts: Pick<LeadFacts, "consentStatus">, type: MessageType): string[] {
   const warnings: string[] = [];

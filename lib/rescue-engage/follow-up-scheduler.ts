@@ -1,10 +1,8 @@
 import "server-only";
 import { getPool } from "../db";
 import { getEffectiveBranding } from "../branding";
-import { buildTemplateDraft } from "../rescue-analysis/message-content.ts";
 import { mapLeadFacts, LEAD_FACT_COLUMNS } from "../rescue-analysis/store";
 import { recordUsage, requireActionCapacity } from "../usage";
-import { hourInTimeZone, type CampaignTone } from "./campaign-schema.ts";
 import { interpolateBookingLink, publicBaseUrl, resolveBookingLink } from "./booking-link.ts";
 import { getOrgSettings } from "../org-settings";
 import {
@@ -13,6 +11,9 @@ import {
   markCampaignLeadMessaged,
   stopCampaignLeads,
 } from "./store.ts";
+import { generateFollowUpDraft } from "../rescue-analysis/messages.ts";
+import type { MessageTone } from "../rescue-analysis/message-content.ts";
+import { hourInTimeZone } from "./campaign-schema.ts";
 
 /**
  * Follow-up send scheduler. Periodically (see instrumentation.ts) finds active
@@ -203,15 +204,17 @@ async function runCampaignFollowUps(
       calendlyUrl: settings.calendar.calendlyUrl,
       baseUrl,
     });
-    const content = buildTemplateDraft(campaign.channel, lead, {
-      orgName,
-      tone: campaign.tone as CampaignTone,
+    // AI-written when OPENAI_API_KEY is configured (attempt number in the
+    // prompt, fact-only rules, opt-out enforced on output); deterministic
+    // per-attempt template variants otherwise or on any AI failure.
+    const { content } = await generateFollowUpDraft(lead, {
+      channel: campaign.channel,
+      tone: campaign.tone as MessageTone,
       objective: campaign.objective ?? undefined,
-      includeOptOutLanguage: true,
       attemptNumber,
-      isFinalAttempt: attemptNumber >= campaign.maxAttempts,
+      maxAttempts: campaign.maxAttempts,
       bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
-    });
+    }, orgName);
     await insertMessage({
       organizationId: campaign.organizationId,
       leadId: lead.id,

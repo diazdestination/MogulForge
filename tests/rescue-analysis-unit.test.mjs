@@ -16,6 +16,7 @@ import {
   buildLeadFactSheet,
   buildTemplateDraft,
   draftWarnings,
+  ensureOptOutLanguage,
   parseMessageContent,
   messageRequestSchema,
   SMS_OPT_OUT,
@@ -395,4 +396,25 @@ test("unknown consent yields an SMS compliance warning", () => {
   assert.match(warnings[0], /consent/i);
   assert.deepEqual(draftWarnings({ consentStatus: "express" }, "sms"), []);
   assert.deepEqual(draftWarnings({ consentStatus: "unknown" }, "email"), []);
+});
+
+// ---------- Opt-out enforcement on AI output ----------
+
+test("ensureOptOutLanguage appends SMS opt-out when missing and leaves it alone when present", () => {
+  const fixed = ensureOptOutLanguage("sms", { body: "Hi Maria, checking in on your roof project." });
+  assert.ok(String(fixed.body).endsWith(SMS_OPT_OUT));
+  const already = { body: `Hi Maria, quick check-in. ${SMS_OPT_OUT}` };
+  assert.deepEqual(ensureOptOutLanguage("sms", already), already);
+});
+
+test("ensureOptOutLanguage appends email opt-out when missing and leaves it alone when present", () => {
+  const fixed = ensureOptOutLanguage("email", { subject: "Checking in", body: "Hi Maria,\n\nJust circling back." });
+  assert.ok(String(fixed.body).includes(EMAIL_OPT_OUT));
+  const already = { subject: "Checking in", body: `Hi Maria,\n\n${EMAIL_OPT_OUT}` };
+  assert.deepEqual(ensureOptOutLanguage("email", already), already);
+});
+
+test("ensureOptOutLanguage passes non-conversational types through unchanged", () => {
+  const note = { note: "Internal CRM note." };
+  assert.deepEqual(ensureOptOutLanguage("follow_up_note", note), note);
 });
