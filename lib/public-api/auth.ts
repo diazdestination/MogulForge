@@ -2,7 +2,7 @@ import "server-only";
 import { getPool } from "../db";
 import { getOrganizationById, getEntitlement, type Organization } from "../tenant";
 import { touchApiKey, verifyApiKey } from "./keys";
-import { getPublicApiRateLimiter } from "./rate-limit";
+import { getPublicApiRateLimiter } from "./rate-limit-server";
 import { PublicApiError } from "./http";
 import type { ApiScope } from "./scopes";
 import { ApiError } from "../api-guard";
@@ -40,7 +40,7 @@ export async function requireApiKey(request: Request, scope: ApiScope): Promise<
   const verified = await verifyApiKey(match[1].trim());
   if (!verified) throw new PublicApiError(401, "invalid_api_key", "The API key is invalid or has been revoked.");
 
-  const rate = getPublicApiRateLimiter().check(verified.keyId);
+  const rate = await getPublicApiRateLimiter().check(`api:${verified.keyId}`);
   const rateHeaders: Record<string, string> = {
     "X-RateLimit-Limit": String(rate.limit),
     "X-RateLimit-Remaining": String(rate.remaining),

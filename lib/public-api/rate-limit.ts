@@ -1,7 +1,8 @@
 /**
- * In-memory fixed-window rate limiter for the public API, keyed by API key id.
- * Suitable for a single-instance deployment; counters reset when the process
- * restarts (documented behavior — limits are a protection, not a billing meter).
+ * Pure in-memory fixed-window rate limiter. The public API uses the
+ * Postgres-backed limiter (lib/public-api/rate-limit-server.ts) so per-key
+ * limits hold across autoscale instances; this class remains as its
+ * degraded-mode fallback and for unit tests.
  */
 
 export type RateLimitResult = {
@@ -49,12 +50,8 @@ export class FixedWindowRateLimiter {
 
 const DEFAULT_LIMIT = Number(process.env.PUBLIC_API_RATE_LIMIT ?? 120);
 
-const globalState = globalThis as typeof globalThis & { __publicApiRateLimiter?: FixedWindowRateLimiter };
-
-export function getPublicApiRateLimiter() {
-  globalState.__publicApiRateLimiter ??= new FixedWindowRateLimiter(
-    Number.isFinite(DEFAULT_LIMIT) && DEFAULT_LIMIT > 0 ? DEFAULT_LIMIT : 120,
-    60_000,
-  );
-  return globalState.__publicApiRateLimiter;
+export function publicApiRateLimit(): number {
+  return Number.isFinite(DEFAULT_LIMIT) && DEFAULT_LIMIT > 0 ? DEFAULT_LIMIT : 120;
 }
+
+export const PUBLIC_API_WINDOW_MS = 60_000;
