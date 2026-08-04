@@ -10,6 +10,10 @@
  *   register("./helpers/server-lib-loader.mjs", import.meta.url);
  */
 export async function resolve(specifier, context, nextResolve) {
+  // Next's package exports omit the extension Node wants outside a Next build.
+  if (specifier === "next/server" || specifier === "next/headers" || specifier === "next/navigation" || specifier === "next/cache") {
+    return nextResolve(`${specifier}.js`, context);
+  }
   if (specifier === "server-only") {
     return { url: "data:text/javascript,export%20default%20undefined;", shortCircuit: true };
   }

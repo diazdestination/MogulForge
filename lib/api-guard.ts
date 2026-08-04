@@ -12,12 +12,15 @@ import type { OrgRole } from "./roles";
  */
 
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public code?: string,
-  ) {
+  status: number;
+  code?: string;
+
+  // Plain field assignments (not TS constructor parameter properties) so
+  // node --test can import this module under type stripping.
+  constructor(status: number, message: string, code?: string) {
     super(message);
+    this.status = status;
+    this.code = code;
   }
 }
 
