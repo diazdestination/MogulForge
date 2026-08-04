@@ -29,6 +29,8 @@ export type NotificationSettings = {
   appointmentAlerts: boolean;
   crmConnectionAlerts: boolean;
   weeklyDigest: boolean;
+  /** Reminder email a few days before a scheduled plan downgrade takes effect. */
+  planChangeReminders: boolean;
   notificationEmails: string[];
 };
 
@@ -66,7 +68,7 @@ export type OrgSettingsSection = (typeof ORG_SETTINGS_SECTIONS)[number];
 export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   contact: { contactName: "", contactEmail: "", contactPhone: "", website: "", address: "" },
   businessHours: { start: "08:00", end: "18:00", days: [1, 2, 3, 4, 5] },
-  notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, crmConnectionAlerts: true, weeklyDigest: false, notificationEmails: [] },
+  notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, crmConnectionAlerts: true, weeklyDigest: false, planChangeReminders: true, notificationEmails: [] },
   messaging: { quietHoursStart: 20, quietHoursEnd: 8, defaultTone: "professional", defaultSenderName: "", defaultBookingLink: "" },
   calendar: { syncProvider: "none", calendlyUrl: "" },
 };
@@ -168,6 +170,7 @@ export function normalizeOrgSettings(raw: unknown, base: OrgSettings = DEFAULT_O
       appointmentAlerts: bool(notif.appointmentAlerts, base.notifications.appointmentAlerts),
       crmConnectionAlerts: bool(notif.crmConnectionAlerts, base.notifications.crmConnectionAlerts),
       weeklyDigest: bool(notif.weeklyDigest, base.notifications.weeklyDigest),
+      planChangeReminders: bool(notif.planChangeReminders, base.notifications.planChangeReminders),
       notificationEmails: emailList(notif.notificationEmails, base.notifications.notificationEmails),
     },
     messaging: {

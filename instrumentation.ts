@@ -106,6 +106,14 @@ export async function register() {
       console.error("Scheduled plan change pass failed", error);
     }
     try {
+      const { sendDuePendingPlanChangeReminders } = await import("./lib/subscriptions");
+      const outcomes = await sendDuePendingPlanChangeReminders();
+      const sent = outcomes.filter((o) => o.status === "sent").length;
+      if (sent > 0) console.log(`Sent ${sent} scheduled downgrade reminder${sent === 1 ? "" : "s"}`);
+    } catch (error) {
+      console.error("Plan change reminder pass failed", error);
+    }
+    try {
       const { runCustomDomainHealthPass } = await import("./lib/custom-domain-health");
       const health = await runCustomDomainHealthPass();
       if (health.failing > 0) console.log(`Custom-domain health pass: ${health.failing}/${health.checked} failing (${health.regressions} new regression${health.regressions === 1 ? "" : "s"}, ${health.alertsSent} alert(s) sent)`);

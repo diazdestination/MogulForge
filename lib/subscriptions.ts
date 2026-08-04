@@ -171,7 +171,7 @@ export function nextUsagePeriodStart(now: Date = new Date()): Date {
 export async function schedulePendingPlanChange(organizationId: string, planId: string, effectiveAt: Date): Promise<OrgSubscription> {
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions
-     SET pending_plan_id = $2, pending_plan_effective_at = $3, updated_at = now()
+     SET pending_plan_id = $2, pending_plan_effective_at = $3, pending_plan_reminder_sent_at = NULL, updated_at = now()
      WHERE organization_id = $1
      RETURNING *`,
     [organizationId, planId, effectiveAt.toISOString()],
@@ -184,7 +184,7 @@ export async function schedulePendingPlanChange(organizationId: string, planId: 
 export async function clearPendingPlanChange(organizationId: string): Promise<OrgSubscription | null> {
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions
-     SET pending_plan_id = NULL, pending_plan_effective_at = NULL, updated_at = now()
+     SET pending_plan_id = NULL, pending_plan_effective_at = NULL, pending_plan_reminder_sent_at = NULL, updated_at = now()
      WHERE organization_id = $1 AND pending_plan_id IS NOT NULL
      RETURNING *`,
     [organizationId],
@@ -205,7 +205,7 @@ export async function applyDuePendingPlanChanges(now: Date = new Date(), organiz
   if (organizationId) params.push(organizationId);
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions s
-     SET plan_id = due.to_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL, updated_at = now()
+     SET plan_id = due.to_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL, pending_plan_reminder_sent_at = NULL, updated_at = now()
      FROM (
        SELECT organization_id, plan_id AS from_plan_id, pending_plan_id AS to_plan_id, pending_plan_effective_at
        FROM org_subscriptions
@@ -235,6 +235,92 @@ export async function applyDuePendingPlanChanges(now: Date = new Date(), organiz
     });
   }
   return applied;
+}
+
+const REMINDER_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
+
+export type PlanChangeReminderOutcome = { organizationId: string; status: "sent" | "skipped"; reason?: string };
+
+/**
+ * Emails org notification recipients ~3 days before a scheduled plan change
+ * takes effect. Each pending change gets at most one reminder: the row is
+ * claimed by setting pending_plan_reminder_sent_at before sending, and the
+ * flag is cleared whenever the change is (re)scheduled, cancelled, or
+ * applied. Preference-based skips (toggle off, no recipients) still consume
+ * the claim so the pass never re-nags. Delivery failures release the claim
+ * for the next pass. Safe to call from cron and the in-app timer.
+ */
+export async function sendDuePendingPlanChangeReminders(now: Date = new Date()): Promise<PlanChangeReminderOutcome[]> {
+  const { rows } = await getPool().query(
+    `UPDATE org_subscriptions s
+     SET pending_plan_reminder_sent_at = now()
+     FROM (
+       SELECT sub.organization_id
+       FROM org_subscriptions sub
+       WHERE sub.pending_plan_id IS NOT NULL
+         AND sub.pending_plan_reminder_sent_at IS NULL
+         AND sub.pending_plan_effective_at > $1
+         AND sub.pending_plan_effective_at <= $2
+       FOR UPDATE SKIP LOCKED
+     ) due
+     WHERE s.organization_id = due.organization_id
+     RETURNING s.organization_id, s.pending_plan_id, s.pending_plan_effective_at,
+       (SELECT name FROM organizations o WHERE o.id = s.organization_id) AS org_name,
+       (SELECT name FROM plan_definitions p WHERE p.id = s.plan_id) AS current_plan_name,
+       (SELECT name FROM plan_definitions p WHERE p.id = s.pending_plan_id) AS pending_plan_name`,
+    [now.toISOString(), new Date(now.getTime() + REMINDER_LEAD_MS).toISOString()],
+  );
+  if (rows.length === 0) return [];
+
+  const [{ sendOrgAlert }, { buildPlanChangeReminderEmail }, { SITE_URL }, { logAudit }] = await Promise.all([
+    import("./org-alerts"),
+    import("./org-alerts-content"),
+    import("./site"),
+    import("./audit"),
+  ]);
+
+  const outcomes: PlanChangeReminderOutcome[] = [];
+  for (const row of rows) {
+    const effectiveAt = new Date(row.pending_plan_effective_at);
+    try {
+      const result = await sendOrgAlert(
+        row.organization_id,
+        "planChangeReminders",
+        buildPlanChangeReminderEmail({
+          orgName: row.org_name ?? "Your organization",
+          currentPlanName: row.current_plan_name ?? "your current plan",
+          pendingPlanName: row.pending_plan_name ?? row.pending_plan_id,
+          effectiveAt,
+          planPageUrl: `${SITE_URL}/dashboard/revenue-rescue/plan`,
+        }),
+      );
+      if (result.status === "sent") {
+        await logAudit({
+          organizationId: row.organization_id,
+          actorLabel: "system",
+          action: "subscription.downgrade_reminder_sent",
+          targetType: "org_subscription",
+          targetId: row.organization_id,
+          metadata: { pendingPlanId: row.pending_plan_id, effectiveAt: effectiveAt.toISOString(), to: result.to },
+        });
+        outcomes.push({ organizationId: row.organization_id, status: "sent" });
+      } else {
+        // Preference-based skip: keep the claim so we don't re-check every pass.
+        outcomes.push({ organizationId: row.organization_id, status: "skipped", reason: result.reason });
+      }
+    } catch (error) {
+      // Delivery failure: release the claim so the next pass retries.
+      console.error(`Plan change reminder failed for organization ${row.organization_id}`, error);
+      await getPool()
+        .query(
+          "UPDATE org_subscriptions SET pending_plan_reminder_sent_at = NULL WHERE organization_id = $1 AND pending_plan_id IS NOT NULL",
+          [row.organization_id],
+        )
+        .catch(() => {});
+      outcomes.push({ organizationId: row.organization_id, status: "skipped", reason: "error" });
+    }
+  }
+  return outcomes;
 }
 
 export type PendingPlanChange = { planId: string; planName: string; effectiveAt: string };

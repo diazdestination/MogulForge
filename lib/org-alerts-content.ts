@@ -125,6 +125,33 @@ export function buildAnalysisHotLeadsEmail(input: {
   };
 }
 
+export function buildPlanChangeReminderEmail(input: {
+  orgName: string;
+  currentPlanName: string;
+  pendingPlanName: string;
+  effectiveAt: Date;
+  planPageUrl: string;
+}): AlertEmail {
+  const when = input.effectiveAt.toUTCString();
+  return {
+    subject: `Reminder: ${input.orgName} switches to ${input.pendingPlanName} on ${input.effectiveAt.toISOString().slice(0, 10)}`,
+    html: wrap(
+      `Scheduled plan change — ${input.orgName}`,
+      `<p style="margin-top:0;color:#374151;">A plan change you scheduled is about to take effect. Your account will move from <strong>${escapeHtml(input.currentPlanName)}</strong> to <strong>${escapeHtml(input.pendingPlanName)}</strong>, which may reduce your usage limits.</p>
+       ${detailRows([
+         ["Current plan", input.currentPlanName],
+         ["New plan", input.pendingPlanName],
+         ["Takes effect", `${when} (UTC)`],
+       ])}
+       <p style="margin-top:16px;">
+         <a href="${escapeHtml(input.planPageUrl)}" style="display:inline-block;background:#111827;color:#ffffff;padding:10px 18px;border-radius:8px;text-decoration:none;font-size:14px;">Review or cancel this change</a>
+       </p>
+       <p style="color:#6b7280;font-size:13px;">No action is needed if you still want the change — it will apply automatically.</p>`,
+      `Sent by ${input.orgName} account alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export function buildCrmConnectionErrorEmail(input: {
   orgName: string;
   connectionName: string;

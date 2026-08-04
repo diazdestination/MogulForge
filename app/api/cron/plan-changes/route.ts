@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
-import { applyDuePendingPlanChanges } from "@/lib/subscriptions";
+import { applyDuePendingPlanChanges, sendDuePendingPlanChangeReminders } from "@/lib/subscriptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +21,13 @@ async function authorized(request: Request) {
 async function run() {
   try {
     const applied = await applyDuePendingPlanChanges();
-    return NextResponse.json({ applied: applied.length, changes: applied });
+    const reminders = await sendDuePendingPlanChangeReminders();
+    return NextResponse.json({
+      applied: applied.length,
+      changes: applied,
+      remindersSent: reminders.filter((r) => r.status === "sent").length,
+      reminders,
+    });
   } catch (error) {
     console.error("Scheduled plan change pass failed", error);
     return NextResponse.json({ error: "Scheduled plan change pass failed" }, { status: 500 });

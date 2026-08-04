@@ -211,6 +211,7 @@ export function RescueSettingsPanel({ orgId, canManage }: { orgId: string; canMa
             ["appointmentAlerts", "Appointment alerts", "When an appointment is booked or changes"],
             ["crmConnectionAlerts", "CRM connection alerts", "When a CRM connection stops working and lead delivery pauses"],
             ["weeklyDigest", "Weekly digest", "A summary of pipeline movement every Monday"],
+            ["planChangeReminders", "Plan change reminders", "A heads-up a few days before a scheduled downgrade takes effect"],
           ] as const).map(([key, title, sub]) => (
             <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl bg-black/30 p-3">
               <input type="checkbox" disabled={disabled} checked={settings.notifications[key]}
