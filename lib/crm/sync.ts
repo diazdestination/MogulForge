@@ -2,6 +2,7 @@ import "server-only";
 import { getPool } from "../db";
 import { logAudit } from "../audit";
 import { pushLeadForProvider, pullContactsForProvider, type RemoteContact } from "./adapters";
+import { recordPushDelivery } from "./deliveries";
 import { listCrmConnections, recordSyncConflict, updateCrmConnection, type CrmConnection } from "./store";
 import { normalizeEmail, normalizePhone } from "../public-api/lead-intake";
 
@@ -23,6 +24,12 @@ async function loadLeadFieldsBatch(organizationId: string, leadIds: string[]): P
     [organizationId, leadIds],
   );
   return rows.map((row) => ({ id: String(row.id), fields: shapeLeadFields(row) }));
+}
+
+/** Loads one lead's mapped fields — used by the delivery retry endpoint. */
+export async function loadLeadFieldsForPush(organizationId: string, leadId: string): Promise<Record<string, unknown> | null> {
+  const [lead] = await loadLeadFieldsBatch(organizationId, [leadId]);
+  return lead?.fields ?? null;
 }
 
 function shapeLeadFields(row: Record<string, unknown>): Record<string, unknown> {
@@ -70,6 +77,15 @@ export async function pushLeadsToCrmConnections(organizationId: string, leadIds:
     for (const lead of leads) {
       for (const connection of connections) {
         const result = await pushLeadForProvider(connection.provider, connection.config, connection.fieldMapping, lead.fields);
+        // Every outcome lands in the per-connection delivery log so clients can see and retry failures.
+        await recordPushDelivery(organizationId, {
+          connectionId: connection.id,
+          leadId: lead.id,
+          provider: connection.provider,
+          ok: result.ok,
+          statusCode: result.statusCode,
+          message: result.message,
+        }).catch((error) => console.error("CRM push delivery log failed", error));
         if (result.ok) {
           pushed += 1;
         } else {

@@ -22,6 +22,18 @@ type Connection = {
   lastTestAt: string | null;
   lastTestResult: { ok?: boolean; statusCode?: number | null; message?: string } | null;
 };
+type Delivery = {
+  id: string;
+  connectionId: string;
+  leadId: string;
+  leadName: string | null;
+  status: "succeeded" | "failed";
+  attempts: number;
+  lastStatusCode: number | null;
+  lastError: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+};
 type Conflict = {
   id: string;
   leadId: string;
@@ -58,6 +70,26 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
   } | null>(null);
   const [editing, setEditing] = useState<Connection | null>(null);
   const [mappingDraft, setMappingDraft] = useState<FieldMappingEntry[]>([]);
+  const [deliveriesFor, setDeliveriesFor] = useState<string | null>(null);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [deliveriesLoading, setDeliveriesLoading] = useState(false);
+
+  const loadDeliveries = useCallback(
+    async (connectionId: string) => {
+      setDeliveriesLoading(true);
+      try {
+        const res = await fetch(`/api/orgs/${orgId}/integrations/crm/${connectionId}/deliveries`, { cache: "no-store" });
+        const body = await res.json().catch(() => null);
+        if (res.ok) setDeliveries(body.deliveries ?? []);
+        else setError(body?.error ?? "Could not load CRM deliveries.");
+      } catch {
+        setError("Could not load CRM deliveries.");
+      } finally {
+        setDeliveriesLoading(false);
+      }
+    },
+    [orgId],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -281,7 +313,8 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
           <p className="text-sm font-bold">Connections</p>
           <div className="mt-3 space-y-2">
             {connections.map((conn) => (
-              <div key={conn.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
+              <div key={conn.id} className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="font-bold">{conn.name}</span> <span className="text-white/40">({conn.provider})</span>{" "}
                   <span className={conn.status === "active" ? "text-forge-lime" : conn.status === "error" ? "text-red-300" : "text-white/60"}>· {conn.status}</span>
@@ -298,6 +331,20 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
                   </button>
                   <button
                     className={btnGhost}
+                    onClick={() => {
+                      if (deliveriesFor === conn.id) {
+                        setDeliveriesFor(null);
+                      } else {
+                        setDeliveriesFor(conn.id);
+                        setDeliveries([]);
+                        void loadDeliveries(conn.id);
+                      }
+                    }}
+                  >
+                    {deliveriesFor === conn.id ? "Hide deliveries" : "Deliveries"}
+                  </button>
+                  <button
+                    className={btnGhost}
                     disabled={busy}
                     onClick={() => {
                       if (confirm("Delete this connection?")) void call(`/api/orgs/${orgId}/integrations/crm/${conn.id}`, undefined, "DELETE");
@@ -306,6 +353,60 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
                     Delete
                   </button>
                 </div>
+                </div>
+                {deliveriesFor === conn.id && (
+                  <div className="mt-3 border-t border-white/10 pt-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-white/40">Recent lead pushes</p>
+                    {deliveriesLoading ? (
+                      <p className="mt-2 text-white/50">Loading…</p>
+                    ) : deliveries.length === 0 ? (
+                      <p className="mt-2 text-white/50">No lead pushes recorded for this connection yet.</p>
+                    ) : (
+                      <div className="mt-2 space-y-1.5">
+                        {deliveries.map((d) => (
+                          <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/5 bg-black/30 px-3 py-2">
+                            <div>
+                              <span className={d.status === "succeeded" ? "text-forge-lime" : "text-red-300"}>
+                                {d.status === "succeeded" ? "✓ delivered" : "✗ failed"}
+                              </span>{" "}
+                              <span className="font-bold">{d.leadName ?? d.leadId}</span>{" "}
+                              <span className="text-white/40">
+                                · {new Date(d.createdAt).toLocaleString()}
+                                {d.attempts > 1 && ` · ${d.attempts} attempts`}
+                                {d.lastStatusCode != null && ` · HTTP ${d.lastStatusCode}`}
+                              </span>
+                              {d.status === "failed" && d.lastError && <p className="mt-0.5 text-red-300/80">{d.lastError}</p>}
+                            </div>
+                            {d.status === "failed" && (
+                              <button
+                                className={btnGhost}
+                                disabled={busy}
+                                onClick={async () => {
+                                  setBusy(true);
+                                  setNotice("");
+                                  try {
+                                    const res = await fetch(`/api/orgs/${orgId}/integrations/crm/${conn.id}/deliveries/${d.id}/retry`, { method: "POST" });
+                                    const body = await res.json().catch(() => null);
+                                    if (!res.ok) setError(body?.error ?? "Retry failed.");
+                                    else {
+                                      setError("");
+                                      setNotice(body?.error ? body.error : "Lead re-pushed successfully.");
+                                    }
+                                    await Promise.all([loadDeliveries(conn.id), load()]);
+                                  } finally {
+                                    setBusy(false);
+                                  }
+                                }}
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
