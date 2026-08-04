@@ -34,6 +34,7 @@ type Delivery = {
   leadName: string | null;
   status: "succeeded" | "failed";
   attempts: number;
+  nextAttemptAt: string | null;
   lastStatusCode: number | null;
   lastError: string | null;
   deliveredAt: string | null;
@@ -402,6 +403,13 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
                                 {d.lastStatusCode != null && ` · HTTP ${d.lastStatusCode}`}
                               </span>
                               {d.status === "failed" && d.lastError && <p className="mt-0.5 text-red-300/80">{d.lastError}</p>}
+                              {d.status === "failed" && (
+                                <p className="mt-0.5 text-white/40">
+                                  {d.nextAttemptAt
+                                    ? `Retries automatically at ${new Date(d.nextAttemptAt).toLocaleString()}`
+                                    : "No more automatic retries — use Retry to push again"}
+                                </p>
+                              )}
                             </div>
                             {d.status === "failed" && (
                               <button
