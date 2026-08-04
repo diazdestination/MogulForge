@@ -37,6 +37,7 @@ export const GET = guard(async (_request: Request, { params }: Ctx) => {
           resolveBookingLink({
             organizationId: org.id,
             leadId,
+            campaignId: campaign.id,
             campaignBookingLink: campaign.bookingLink,
             defaultBookingLink: settings.messaging.defaultBookingLink,
             calendlyUrl: settings.calendar.calendlyUrl,

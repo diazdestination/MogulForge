@@ -15,6 +15,13 @@ export type BookingClaims = {
   org: string;
   /** Optional lead id when the link was minted for a specific lead. */
   lead: string | null;
+  /**
+   * Optional campaign id when the link was minted for a campaign message, so
+   * a completed booking can be attributed back to the campaign that drove it.
+   * Absent (undefined) on tokens minted before this claim existed — old links
+   * keep verifying.
+   */
+  cmp?: string | null;
   iat: number;
 };
 
@@ -29,12 +36,13 @@ function sign(payload: string, secret?: string) {
 }
 
 export function issueBookingToken(
-  input: { organizationId: string; leadId?: string | null },
+  input: { organizationId: string; leadId?: string | null; campaignId?: string | null },
   options?: { secret?: string; nowSeconds?: number },
 ): string {
   const claims: BookingClaims = {
     org: input.organizationId,
     lead: input.leadId ?? null,
+    ...(input.campaignId ? { cmp: input.campaignId } : {}),
     iat: options?.nowSeconds ?? Math.floor(Date.now() / 1000),
   };
   const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
@@ -62,13 +70,14 @@ export function verifyBookingToken(token: string, options?: { secret?: string })
   }
   if (typeof claims.org !== "string" || claims.org === "") return { ok: false, reason: "malformed" };
   if (claims.lead !== null && typeof claims.lead !== "string") return { ok: false, reason: "malformed" };
+  if (claims.cmp !== undefined && claims.cmp !== null && typeof claims.cmp !== "string") return { ok: false, reason: "malformed" };
   return { ok: true, claims };
 }
 
 /** Absolute booking-page URL for an org, or "" when signing is unavailable. */
-export function buildBookingUrl(baseUrl: string, organizationId: string, leadId?: string | null): string {
+export function buildBookingUrl(baseUrl: string, organizationId: string, leadId?: string | null, campaignId?: string | null): string {
   try {
-    const token = issueBookingToken({ organizationId, leadId: leadId ?? null });
+    const token = issueBookingToken({ organizationId, leadId: leadId ?? null, campaignId: campaignId ?? null });
     return `${baseUrl.replace(/\/$/, "")}/book/${token}`;
   } catch {
     return "";

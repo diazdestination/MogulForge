@@ -177,6 +177,7 @@ export async function runLiveSends(
     const bookingLink = resolveBookingLink({
       organizationId,
       leadId: lead.id,
+      campaignId: campaign.id,
       campaignBookingLink: campaign.bookingLink,
       defaultBookingLink: settings.messaging.defaultBookingLink,
       calendlyUrl: settings.calendar.calendlyUrl,
@@ -286,6 +287,7 @@ export async function runSimulatedSends(
     const bookingLink = resolveBookingLink({
       organizationId,
       leadId: lead.id,
+      campaignId: campaign.id,
       campaignBookingLink: campaign.bookingLink,
       defaultBookingLink: settings.messaging.defaultBookingLink,
       calendlyUrl: settings.calendar.calendlyUrl,

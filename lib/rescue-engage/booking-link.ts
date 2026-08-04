@@ -45,6 +45,8 @@ export type ResolveBookingLinkInput = {
   organizationId: string;
   /** The specific lead this message goes to (per-lead booking token), or null. */
   leadId: string | null;
+  /** The campaign driving this message, embedded so bookings attribute back to it, or null. */
+  campaignId?: string | null;
   /** The campaign's booking-link field: a literal URL, the placeholder, or empty. */
   campaignBookingLink: string | null;
   /** Org settings fallbacks. */
@@ -65,7 +67,7 @@ export function resolveBookingLink(input: ResolveBookingLinkInput): string {
   const literal = (input.campaignBookingLink ?? "").trim();
   if (literal !== "" && !containsBookingPlaceholder(literal)) return literal;
   if (input.baseUrl) {
-    const minted = buildBookingUrl(input.baseUrl, input.organizationId, input.leadId);
+    const minted = buildBookingUrl(input.baseUrl, input.organizationId, input.leadId, input.campaignId ?? null);
     if (minted) return minted;
   }
   const fallback = input.defaultBookingLink.trim() || input.calendlyUrl.trim();

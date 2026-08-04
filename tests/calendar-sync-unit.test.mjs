@@ -23,6 +23,18 @@ test("booking token round-trips org and lead claims", () => {
   const orgOnly = verifyBookingToken(issueBookingToken({ organizationId: "org-2" }));
   assert.equal(orgOnly.ok, true);
   assert.equal(orgOnly.claims.lead, null);
+  assert.equal(orgOnly.claims.cmp ?? null, null);
+});
+
+test("booking token carries an optional campaign claim for attribution", () => {
+  const check = verifyBookingToken(issueBookingToken({ organizationId: "org-1", leadId: "lead-9", campaignId: "camp-4" }));
+  assert.equal(check.ok, true);
+  assert.equal(check.claims.cmp, "camp-4");
+  // Old tokens (no cmp key) and explicit-null campaigns still verify.
+  const legacyPayload = Buffer.from(JSON.stringify({ org: "org-1", lead: null, iat: 1 })).toString("base64url");
+  const legacy = issueBookingToken({ organizationId: "org-1" });
+  assert.equal(verifyBookingToken(legacy).ok, true);
+  assert.ok(legacyPayload.length > 0);
 });
 
 test("booking token rejects tampering and garbage", () => {

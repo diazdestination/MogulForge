@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyBookingToken } from "@/lib/booking-token";
 import { getOrganizationById } from "@/lib/tenant";
 import { intakeLead, normalizeEmail, normalizePhone } from "@/lib/public-api/lead-intake";
-import { createAppointment, findLeadIdByEmail, getLeadEngagement, logActivity, setLeadStage } from "@/lib/rescue-engage/store";
+import { createAppointment, findLeadIdByEmail, getCampaign, getLeadEngagement, logActivity, setLeadStage } from "@/lib/rescue-engage/store";
 import { pushAppointmentToCalendar } from "@/lib/calendar/sync";
 
 export const runtime = "nodejs";
@@ -60,9 +60,20 @@ export async function POST(request: Request, { params }: Ctx) {
     leadId = intake.leadId;
   }
 
+  // Campaign attribution: when the link was minted for a campaign message,
+  // record which campaign drove the booking — but only after confirming the
+  // claimed campaign actually belongs to this org (a token is long-lived and
+  // the campaign may have been deleted since it was sent).
+  let campaignId: string | null = null;
+  if (check.claims.cmp) {
+    const campaign = await getCampaign(org.id, check.claims.cmp);
+    if (campaign) campaignId = campaign.id;
+  }
+
   const appointment = await createAppointment({
     organizationId: org.id,
     leadId,
+    campaignId,
     appointmentType: "estimate",
     scheduledStart: new Date(startMs).toISOString(),
     notes: notes || null,
@@ -78,8 +89,9 @@ export async function POST(request: Request, { params }: Ctx) {
   await logActivity({
     organizationId: org.id,
     leadId,
+    campaignId,
     activityType: "appointment_booked",
-    title: "Appointment requested via booking link",
+    title: campaignId ? "Appointment requested via campaign booking link" : "Appointment requested via booking link",
     detail: `Scheduled for ${new Date(startMs).toISOString()}`,
     actorUserId: null,
   });

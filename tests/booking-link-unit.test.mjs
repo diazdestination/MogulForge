@@ -23,6 +23,7 @@ const { buildTemplateDraft } = await import("../lib/rescue-analysis/message-cont
 
 const ORG = "11111111-1111-1111-1111-111111111111";
 const LEAD = "22222222-2222-2222-2222-222222222222";
+const CAMPAIGN = "33333333-3333-3333-3333-333333333333";
 
 function lead(overrides = {}) {
   return {
@@ -94,6 +95,24 @@ test("placeholder mints a per-lead /book token carrying org and lead ids", () =>
   assert.equal(check.ok, true);
   assert.equal(check.claims.org, ORG);
   assert.equal(check.claims.lead, LEAD);
+  assert.equal(check.claims.cmp ?? null, null);
+});
+
+test("campaign id is embedded in the minted token so bookings attribute back", () => {
+  const url = resolveBookingLink({
+    organizationId: ORG,
+    leadId: LEAD,
+    campaignId: CAMPAIGN,
+    campaignBookingLink: BOOKING_LINK_PLACEHOLDER,
+    defaultBookingLink: "",
+    calendlyUrl: "",
+    baseUrl: "https://app.test",
+  });
+  const check = verifyBookingToken(url.slice("https://app.test/book/".length));
+  assert.equal(check.ok, true);
+  assert.equal(check.claims.org, ORG);
+  assert.equal(check.claims.lead, LEAD);
+  assert.equal(check.claims.cmp, CAMPAIGN);
 });
 
 test("falls back to default booking link, then Calendly, when minting unavailable", () => {

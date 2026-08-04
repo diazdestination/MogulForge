@@ -199,6 +199,7 @@ async function runCampaignFollowUps(
     const bookingLink = resolveBookingLink({
       organizationId: campaign.organizationId,
       leadId: lead.id,
+      campaignId: campaign.campaignId,
       campaignBookingLink: campaign.bookingLink,
       defaultBookingLink: settings.messaging.defaultBookingLink,
       calendlyUrl: settings.calendar.calendlyUrl,
