@@ -18,3 +18,5 @@ Pure `lib/` TypeScript modules can be unit-tested directly from `tests/*.test.mj
 # xlsx (SheetJS) install
 
 Install `xlsx` from the SheetJS CDN tarball, never plain `npm install xlsx` — the npm registry's newest release is old and has known vulnerabilities.
+
+- DNS-dependent lib flows: tests/helpers/dns-mock-loader.mjs replaces node:dns/promises with a globalThis.__dnsMock delegate (set mock BEFORE importing the lib). TXT verify expects records shaped `mogulforge-verify=<token>`.
