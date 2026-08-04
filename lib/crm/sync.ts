@@ -121,17 +121,41 @@ const PULL_FIELDS: Array<{ key: keyof RemoteContact; field: string; column: stri
   { key: "lastName", field: "lastName", column: "last_name" },
 ];
 
-export type PullSummary = { ok: boolean; message: string; matched: number; updated: number; conflicts: number; unmatched: number };
+export type PullSummary = {
+  ok: boolean;
+  message: string;
+  matched: number;
+  updated: number;
+  conflicts: number;
+  unmatched: number;
+  /** Consecutive scheduled-pull failures recorded for this connection (0 after any success). */
+  consecutiveFailures: number;
+};
+
+/** Reads the stored consecutive scheduled-pull failure count off a connection. */
+function readConsecutivePullFailures(connection: CrmConnection): number {
+  const lastPull = (connection.lastTestResult as { lastPull?: { consecutiveFailures?: unknown } } | null)?.lastPull;
+  const value = Number(lastPull?.consecutiveFailures ?? 0);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
 
 /**
  * Pulls recent contacts from the provider and reconciles them with local leads.
  * Remote changes only apply automatically when the remote copy is provably newer
  * AND the local field is empty-or-equal; otherwise a conflict is recorded.
+ * Scheduled runs (options.scheduled) increment the connection's consecutive
+ * failure counter on failure; any success resets it to zero.
  */
-export async function pullCrmUpdates(organizationId: string, connection: CrmConnection): Promise<PullSummary> {
+export async function pullCrmUpdates(
+  organizationId: string,
+  connection: CrmConnection,
+  options: { scheduled?: boolean } = {},
+): Promise<PullSummary> {
   const result = await pullContactsForProvider(connection.provider, connection.config);
   if (!result.ok) {
-    const failure: PullSummary = { ok: false, message: result.message, matched: 0, updated: 0, conflicts: 0, unmatched: 0 };
+    const previousFailures = readConsecutivePullFailures(connection);
+    const consecutiveFailures = options.scheduled ? previousFailures + 1 : previousFailures;
+    const failure: PullSummary = { ok: false, message: result.message, matched: 0, updated: 0, conflicts: 0, unmatched: 0, consecutiveFailures };
     // Record failed pulls too, so the UI shows the outcome and the scheduler
     // waits a full interval instead of retrying a broken connection every pass.
     await updateCrmConnection(organizationId, connection.id, {
@@ -216,6 +240,7 @@ export async function pullCrmUpdates(organizationId: string, connection: CrmConn
     updated,
     conflicts,
     unmatched,
+    consecutiveFailures: 0,
   };
   await updateCrmConnection(organizationId, connection.id, {
     lastTestResult: { ...(connection.lastTestResult ?? {}), lastPull: { at: new Date().toISOString(), ...summary } },
@@ -262,6 +287,14 @@ export async function processDueCrmPushRetries(limit = 25): Promise<{ processed:
 export const SCHEDULED_PULL_INTERVAL_MINUTES = 15;
 
 /**
+ * After this many consecutive scheduled-pull failures the connection is flagged
+ * status "error" and skipped by the scheduler until it is re-tested and
+ * reactivated — mirroring the outgoing-webhook auto-disable pattern. At a
+ * 15-minute interval this is roughly two hours of uninterrupted failures.
+ */
+export const SCHEDULED_PULL_AUTO_ERROR_FAILURES = 8;
+
+/**
  * Background processor: pulls updates for every active inbound/bidirectional
  * connection whose last pull (success or failure) is older than the interval.
  * Results flow through the same pullCrmUpdates path as manual pulls, so
@@ -291,7 +324,7 @@ export async function runScheduledCrmPulls(limit = 10): Promise<{ pulled: number
     try {
       const connection = await getCrmConnection(organizationId, connectionId);
       if (!connection || connection.status !== "active" || connection.syncDirection === "outbound") continue;
-      const summary = await pullCrmUpdates(organizationId, connection);
+      const summary = await pullCrmUpdates(organizationId, connection, { scheduled: true });
       if (summary.ok) {
         pulled += 1;
       } else {
@@ -302,8 +335,29 @@ export async function runScheduledCrmPulls(limit = 10): Promise<{ pulled: number
           action: "crm_sync.scheduled_pull_failed",
           targetType: "crm_connection",
           targetId: connectionId,
-          metadata: { provider: connection.provider, message: summary.message },
+          metadata: { provider: connection.provider, message: summary.message, consecutiveFailures: summary.consecutiveFailures },
         }).catch((error) => console.error("CRM scheduled pull audit failed", error));
+        if (summary.consecutiveFailures >= SCHEDULED_PULL_AUTO_ERROR_FAILURES) {
+          // Flag the connection so clients see it needs attention and the
+          // scheduler (which only selects status = 'active') stops calling a
+          // broken API every interval. Reactivation requires a passing test.
+          await updateCrmConnection(organizationId, connectionId, { status: "error" }).catch((error) =>
+            console.error("CRM connection auto-error update failed", error),
+          );
+          await logAudit({
+            organizationId,
+            actorLabel: "system",
+            action: "crm_connection.auto_errored",
+            targetType: "crm_connection",
+            targetId: connectionId,
+            metadata: {
+              provider: connection.provider,
+              consecutiveFailures: summary.consecutiveFailures,
+              threshold: SCHEDULED_PULL_AUTO_ERROR_FAILURES,
+              message: summary.message,
+            },
+          }).catch((error) => console.error("CRM auto-error audit failed", error));
+        }
       }
     } catch (error) {
       failed += 1;

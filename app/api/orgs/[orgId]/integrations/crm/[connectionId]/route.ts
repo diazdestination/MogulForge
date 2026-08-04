@@ -54,6 +54,12 @@ export const PATCH = guard(async (request: Request, { params }: Ctx) => {
     if (body.status === "active") {
       const testOk = existing.lastTestResult && (existing.lastTestResult as { ok?: boolean }).ok === true && patch.lastTestResult !== null;
       if (!testOk) throw new ApiError(409, "Run a successful connection test before activating.");
+      // Reactivation clears the consecutive scheduled-pull failure counter so a
+      // previously auto-errored connection gets a full window before re-flagging.
+      const lastPull = (existing.lastTestResult as { lastPull?: Record<string, unknown> } | null)?.lastPull;
+      if (patch.lastTestResult === undefined && lastPull && Number(lastPull.consecutiveFailures ?? 0) > 0) {
+        patch.lastTestResult = { ...(existing.lastTestResult ?? {}), lastPull: { ...lastPull, consecutiveFailures: 0 } };
+      }
     }
     patch.status = body.status;
   }

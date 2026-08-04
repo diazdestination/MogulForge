@@ -24,7 +24,7 @@ type Connection = {
     ok?: boolean;
     statusCode?: number | null;
     message?: string;
-    lastPull?: { at?: string; ok?: boolean; message?: string } | null;
+    lastPull?: { at?: string; ok?: boolean; message?: string; consecutiveFailures?: number } | null;
   } | null;
 };
 type Delivery = {
@@ -338,6 +338,17 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
                   )}
                   {conn.status === "active" && conn.syncDirection !== "outbound" && (conn.provider === "hubspot" || conn.provider === "gohighlevel") && !conn.lastTestResult?.lastPull?.at && (
                     <span className="text-white/40"> · pulls every 15 min (none yet)</span>
+                  )}
+                  {conn.status === "error" && (
+                    <p className="mt-1 text-red-300/90">
+                      Needs attention
+                      {(conn.lastTestResult?.lastPull?.consecutiveFailures ?? 0) > 1 &&
+                        ` — scheduled pulls paused after ${conn.lastTestResult?.lastPull?.consecutiveFailures} consecutive failures`}
+                      . Update the credentials, run a test, then re-activate the connection.
+                      {conn.lastTestResult?.lastPull?.ok === false && conn.lastTestResult.lastPull.message && (
+                        <span className="text-red-300/70"> Last error: {conn.lastTestResult.lastPull.message}</span>
+                      )}
+                    </p>
                   )}
                 </div>
                 <div className="flex gap-2">
