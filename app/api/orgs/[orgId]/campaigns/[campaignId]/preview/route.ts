@@ -45,9 +45,14 @@ export const GET = guard(async (_request: Request, { params }: Ctx) => {
           })
       : undefined,
   });
+  // Samples are always fast template drafts; actual sends are AI-personalized
+  // when a key is configured (with template fallback). Tell the UI which.
+  const sendDraftMode: "ai" | "template" = process.env.OPENAI_API_KEY ? "ai" : "template";
   return NextResponse.json({
     accounting: preview.accounting,
     samples,
+    sampleMode: "template" as const,
+    sendDraftMode,
     provider: getProviderStatus(campaign.channel),
     estimatedSends: preview.accounting.eligible,
   });

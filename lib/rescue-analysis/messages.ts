@@ -48,6 +48,18 @@ export type FollowUpAttemptContext = {
 };
 
 function attemptPromptLines(attempt: FollowUpAttemptContext): string[] {
+  if (attempt.attemptNumber <= 1) {
+    // First touch: this is the very first message the lead receives from this
+    // campaign — an introduction, not a "checking back in" note.
+    const lines = [
+      "This is the FIRST outreach message this lead will receive from this campaign — do NOT imply we've reached out before or that they ignored anything.",
+      "Briefly (re)introduce the business, reference only the stored facts about their project, and invite a low-pressure reply.",
+    ];
+    if (attempt.bookingLink?.trim()) {
+      lines.push(`A booking link is available — include it verbatim so they can grab a time directly: ${attempt.bookingLink.trim()}`);
+    }
+    return lines;
+  }
   const lines = [
     `This is automated follow-up attempt ${attempt.attemptNumber} of at most ${attempt.maxAttempts} for this lead — earlier outreach got no reply.`,
     "Do NOT repeat a generic first-touch introduction; acknowledge (without inventing details) that we've reached out before.",
@@ -155,6 +167,58 @@ export async function generateMessageDraft(
       content: buildTemplateDraft(request.type, lead, templateOptions),
       warnings: [...warnings, "AI generation was unavailable — this is a rules-based template draft."],
     };
+  }
+}
+
+/**
+ * First-touch draft for campaign activation sends. When OPENAI_API_KEY is
+ * configured the draft is AI-written under the same fact-only rules as
+ * follow-ups, with first-touch framing (no "checking back in" language) and
+ * opt-out language enforced on the output. Otherwise — or on any AI failure —
+ * it falls back to the deterministic template, so activation never fails
+ * because of the model. Suppression is checked first, before any generation.
+ */
+export async function generateFirstTouchDraft(
+  lead: LeadForAnalysis,
+  options: {
+    channel: "sms" | "email";
+    tone: MessageTone;
+    objective?: string;
+    bookingLink?: string;
+  },
+  orgName: string,
+): Promise<GeneratedDraft> {
+  if (lead.suppressed || lead.consentStatus === "opted_out") throw new SuppressedLeadError();
+
+  const templateOptions = {
+    orgName,
+    tone: options.tone,
+    objective: options.objective?.trim() || undefined,
+    includeOptOutLanguage: true,
+    bookingLink: options.bookingLink,
+  };
+
+  if (!process.env.OPENAI_API_KEY) {
+    return { mode: "template", content: buildTemplateDraft(options.channel, lead, templateOptions), warnings: [] };
+  }
+
+  const request: MessageRequest = {
+    type: options.channel,
+    tone: options.tone,
+    objective: options.objective?.trim() || undefined,
+    includeOptOutLanguage: true,
+  };
+  try {
+    const content = await runAiGeneration(lead, request, orgName, {
+      attemptNumber: 1,
+      isFinalAttempt: false,
+      maxAttempts: 1,
+      bookingLink: options.bookingLink,
+    });
+    return { mode: "ai", content, warnings: [] };
+  } catch (error) {
+    console.error("AI first-touch generation failed; falling back to template", lead.id, error);
+    return { mode: "template", content: buildTemplateDraft(options.channel, lead, templateOptions), warnings: [] };
   }
 }
 

@@ -21,6 +21,7 @@ type Preview = {
     invalidDuplicate: number; closedStage: number; invalidContact: number; alreadyEnrolled: number; missingConsent: number;
   };
   samples: Array<{ leadName: string; subject: string | null; body: string }>;
+  sendDraftMode?: "ai" | "template";
 };
 
 type EnrolledLead = {
@@ -210,6 +211,9 @@ export function RescueCampaignDetailPanel({ orgId, campaignId }: { orgId: string
               {preview.samples.length > 0 && (
                 <div className="mt-4">
                   <p className="text-xs font-bold uppercase tracking-wider text-white/45">Sample messages</p>
+                  {preview.sendDraftMode === "ai" && (
+                    <p className="mt-1 text-xs text-white/50">These samples are quick template previews. Actual sends will be AI-personalized from each lead's stored facts (falling back to this template if AI is unavailable), always including opt-out language.</p>
+                  )}
                   <ul className="mt-2 space-y-2">
                     {preview.samples.map((s, i) => (
                       <li key={i} className="rounded-xl bg-black/30 p-3 text-sm">

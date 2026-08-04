@@ -136,7 +136,13 @@ export type SampleMessage = {
   body: string;
 };
 
-/** Deterministic sample messages for the preview — built from stored facts only, via the template engine. */
+/**
+ * Deterministic sample messages for the preview — built from stored facts
+ * only, via the template engine. Kept template-based so the preview is fast
+ * and never calls the model; when OPENAI_API_KEY is configured, actual
+ * activation sends are AI-written instead (see generateFirstTouchDraft), so
+ * the preview route labels these samples accordingly.
+ */
 export function buildSampleMessages(
   sampleLeads: LeadForAnalysis[],
   opts: {

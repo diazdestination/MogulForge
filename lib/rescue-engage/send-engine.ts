@@ -1,6 +1,6 @@
 import "server-only";
 import { getPool } from "../db";
-import { buildTemplateDraft } from "../rescue-analysis/message-content.ts";
+import { generateFirstTouchDraft, SuppressedLeadError } from "../rescue-analysis/messages.ts";
 import { mapLeadFacts, LEAD_FACT_COLUMNS } from "../rescue-analysis/store";
 import { hourInTimeZone, isWithinQuietHours, type CampaignTone } from "./campaign-schema.ts";
 import { getProviderStatus, providerName, sendLiveMessage, ProviderSendError } from "./providers.ts";
@@ -183,13 +183,21 @@ export async function runLiveSends(
       calendlyUrl: settings.calendar.calendlyUrl,
       baseUrl,
     });
-    const content = buildTemplateDraft(campaign.channel, lead, {
-      orgName,
-      tone: campaign.tone as CampaignTone,
-      objective: campaign.objective ?? undefined,
-      includeOptOutLanguage: true,
-      bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
-    });
+    // First-touch content: AI-written (fact-only prompt, opt-out enforced on
+    // output) when OPENAI_API_KEY is configured, deterministic template
+    // otherwise or on any AI failure. Suppression is re-checked inside.
+    let content: Record<string, unknown>;
+    try {
+      ({ content } = await generateFirstTouchDraft(lead, {
+        channel: campaign.channel,
+        tone: campaign.tone as CampaignTone,
+        objective: campaign.objective ?? undefined,
+        bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
+      }, orgName));
+    } catch (error) {
+      if (error instanceof SuppressedLeadError) continue; // suppressed since enrollment — never message
+      throw error;
+    }
     const rawSubject = typeof content.subject === "string" ? content.subject : null;
     const subject = rawSubject === null ? null : interpolateBookingLink(rawSubject, bookingLink);
     const body = interpolateBookingLink(String(content.body ?? ""), bookingLink);
@@ -293,13 +301,20 @@ export async function runSimulatedSends(
       calendlyUrl: settings.calendar.calendlyUrl,
       baseUrl,
     });
-    const content = buildTemplateDraft(campaign.channel, lead, {
-      orgName,
-      tone: campaign.tone as CampaignTone,
-      objective: campaign.objective ?? undefined,
-      includeOptOutLanguage: true,
-      bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
-    });
+    // Same AI-first drafting as live sends, so Simulation Mode shows exactly
+    // the kind of message a live activation would produce.
+    let content: Record<string, unknown>;
+    try {
+      ({ content } = await generateFirstTouchDraft(lead, {
+        channel: campaign.channel,
+        tone: campaign.tone as CampaignTone,
+        objective: campaign.objective ?? undefined,
+        bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
+      }, orgName));
+    } catch (error) {
+      if (error instanceof SuppressedLeadError) continue; // suppressed since enrollment — never message
+      throw error;
+    }
     const rawSubject = typeof content.subject === "string" ? content.subject : null;
     await insertMessage({
       organizationId,
