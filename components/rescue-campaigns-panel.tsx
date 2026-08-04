@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CAMPAIGN_TEMPLATES } from "@/lib/rescue-engage/campaign-templates";
 import { APPROVAL_MODE_LABELS, APPROVAL_MODES, STOP_CONDITION_LABELS, STOP_CONDITIONS } from "@/lib/rescue-engage/campaign-schema";
-import { LEAD_CATEGORIES, CATEGORY_LABELS, NO_OUTREACH_CATEGORIES, type LeadCategory } from "@/lib/rescue-analysis/categories";
+import { LEAD_CATEGORIES, CATEGORY_LABELS, NO_OUTREACH_CATEGORIES } from "@/lib/rescue-analysis/categories";
+import { initialCampaignForm, type CampaignFormState, type MessagingDefaults } from "@/lib/rescue-engage/campaign-prefill";
 
 type CampaignRow = {
   id: string; name: string; channel: string; tone: string; mode: string; status: string;
@@ -25,11 +26,8 @@ export function RescueCampaignsPanel({ orgId }: { orgId: string }) {
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [building, setBuilding] = useState<null | {
-    templateKey: string | null; name: string; channel: "sms" | "email"; tone: string; objective: string;
-    categories: LeadCategory[]; minScore: string; approvalMode: string; startDate: string;
-    quietHoursStart: number; quietHoursEnd: number; stopConditions: string[]; followUpDelayDays: number; maxAttempts: number;
-  }>(null);
+  const [defaults, setDefaults] = useState<MessagingDefaults | null>(null);
+  const [building, setBuilding] = useState<CampaignFormState | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,24 +42,23 @@ export function RescueCampaignsPanel({ orgId }: { orgId: string }) {
   }, [orgId]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
+  // Saved messaging defaults prefill new campaigns (best-effort; the form
+  // falls back to its built-in defaults when this hasn't loaded or fails).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/orgs/${orgId}/settings`, { cache: "no-store" });
+        const body = await res.json().catch(() => null);
+        if (!cancelled && res.ok && body?.settings?.messaging) setDefaults(body.settings.messaging as MessagingDefaults);
+      } catch { /* keep built-in defaults */ }
+    })();
+    return () => { cancelled = true; };
+  }, [orgId]);
+
   function startFromTemplate(key: string | null) {
-    const t = key ? CAMPAIGN_TEMPLATES.find((x) => x.key === key) : null;
-    setBuilding({
-      templateKey: t?.key ?? null,
-      name: t?.name ?? "",
-      channel: t?.channel ?? "sms",
-      tone: t?.tone ?? "professional",
-      objective: t?.objective ?? "",
-      categories: t ? [...t.audience.categories] : [],
-      minScore: t?.audience.minScore != null ? String(t.audience.minScore) : "",
-      approvalMode: "simulation_only",
-      startDate: "",
-      quietHoursStart: 20,
-      quietHoursEnd: 8,
-      stopConditions: ["reply", "opt_out", "appointment_booked", "max_attempts"],
-      followUpDelayDays: 3,
-      maxAttempts: 3,
-    });
+    const t = key ? CAMPAIGN_TEMPLATES.find((x) => x.key === key) ?? null : null;
+    setBuilding(initialCampaignForm(t, defaults));
   }
 
   async function create() {
@@ -81,6 +78,8 @@ export function RescueCampaignsPanel({ orgId }: { orgId: string }) {
           followUpDelayDays: building.followUpDelayDays,
           maxAttempts: building.maxAttempts,
           stopConditions: building.stopConditions,
+          senderIdentity: building.senderIdentity || null,
+          bookingLink: building.bookingLink || null,
           audience: {
             categories: building.categories,
             minScore: building.minScore === "" ? null : Number(building.minScore),
@@ -149,6 +148,12 @@ export function RescueCampaignsPanel({ orgId }: { orgId: string }) {
                 </select>
               </label>
             </div>
+            <label className="block text-xs text-white/55">Sender name
+              <input value={building.senderIdentity} onChange={(e) => setBuilding({ ...building, senderIdentity: e.target.value })} className={`${input} mt-1 w-full`} placeholder="Who messages come from" />
+            </label>
+            <label className="block text-xs text-white/55">Booking link
+              <input value={building.bookingLink} onChange={(e) => setBuilding({ ...building, bookingLink: e.target.value })} className={`${input} mt-1 w-full`} placeholder="https://calendly.com/…" />
+            </label>
             <label className="block text-xs text-white/55 md:col-span-2">Objective
               <input value={building.objective} onChange={(e) => setBuilding({ ...building, objective: e.target.value })} className={`${input} mt-1 w-full`} placeholder="What should this campaign accomplish?" />
             </label>
