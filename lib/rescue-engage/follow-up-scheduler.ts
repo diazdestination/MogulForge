@@ -194,6 +194,8 @@ async function runCampaignFollowUps(
       tone: campaign.tone as CampaignTone,
       objective: campaign.objective ?? undefined,
       includeOptOutLanguage: true,
+      attemptNumber,
+      isFinalAttempt: attemptNumber >= campaign.maxAttempts,
     });
     await insertMessage({
       organizationId: campaign.organizationId,

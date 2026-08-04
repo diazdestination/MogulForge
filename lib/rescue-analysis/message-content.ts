@@ -120,6 +120,13 @@ export type TemplateOptions = {
   tone: MessageTone;
   objective?: string;
   includeOptOutLanguage: boolean;
+  /**
+   * Which touch this draft is (1 = first contact). Attempts 2+ get distinct
+   * wording so repeat follow-ups never read identical to the first touch.
+   */
+  attemptNumber?: number;
+  /** True when this is the last planned touch — uses "closing the file" framing. */
+  isFinalAttempt?: boolean;
 };
 
 function greetName(facts: LeadFacts): string {
@@ -145,28 +152,72 @@ function urgencyLine(tone: MessageTone): string {
  * Rules-only drafts used when AI is unavailable. Built exclusively from stored
  * facts with conservative fallbacks for anything missing.
  */
+/**
+ * Which wording variant an attempt uses: attempt 1 is the standard first
+ * touch, intermediate attempts alternate between a lighter "just checking in"
+ * and a "circling back" nudge, and only the true final attempt gets the
+ * "closing the file" note. Every variant keeps opt-out language when requested.
+ */
+function attemptVariant(opts: TemplateOptions): "first" | "checkin" | "nudge" | "closing" {
+  const attempt = opts.attemptNumber ?? 1;
+  if (opts.isFinalAttempt) return "closing";
+  if (attempt <= 1) return "first";
+  // Intermediate touches alternate between two angles so back-to-back
+  // follow-ups never read the same (attempt 2 → checkin, 3 → nudge, 4 → checkin, …).
+  return attempt % 2 === 0 ? "checkin" : "nudge";
+}
+
 export function buildTemplateDraft(type: MessageType, facts: LeadFacts, opts: TemplateOptions): Record<string, unknown> {
   const name = greetName(facts);
   const project = projectRef(facts);
   const estimate = estimateRef(facts);
   const followLine = estimate ? `We wanted to follow up on ${estimate} for ${project}.` : `We wanted to follow up on ${project}.`;
+  const variant = attemptVariant(opts);
 
   switch (type) {
     case "sms": {
-      const body = [`Hi ${name}, this is ${opts.orgName}.`, followLine, "Is this still something you're considering?", opts.includeOptOutLanguage ? SMS_OPT_OUT : null]
-        .filter(Boolean)
-        .join(" ");
+      const core =
+        variant === "closing"
+          ? [`Hi ${name}, ${opts.orgName} here — this is our last note about ${project}.`, "If we don't hear back we'll close your file, but one quick reply keeps it open."]
+          : variant === "checkin"
+            ? [`Hi ${name}, just checking in from ${opts.orgName} about ${project}.`, "Any update on your end? Happy to answer questions."]
+            : variant === "nudge"
+              ? [`Hi ${name}, ${opts.orgName} circling back on ${project}.`, "Timing shifts all the time — want us to keep it on our radar, or has anything changed?"]
+              : [`Hi ${name}, this is ${opts.orgName}.`, followLine, "Is this still something you're considering?"];
+      const body = [...core, opts.includeOptOutLanguage ? SMS_OPT_OUT : null].filter(Boolean).join(" ");
       return parseMessageContent("sms", { body });
     }
     case "email": {
-      const subject = facts.projectType?.trim() ? `Following up on your ${facts.projectType.trim().toLowerCase()} project` : "Following up on your project inquiry";
+      const projectLabel = facts.projectType?.trim() ? `your ${facts.projectType.trim().toLowerCase()} project` : "your project inquiry";
+      const subject =
+        variant === "closing"
+          ? `Should we close your file on ${projectLabel}?`
+          : variant === "checkin"
+            ? `Just checking in on ${projectLabel}`
+            : variant === "nudge"
+              ? `Circling back on ${projectLabel}`
+              : facts.projectType?.trim()
+                ? `Following up on your ${facts.projectType.trim().toLowerCase()} project`
+                : "Following up on your project inquiry";
+      const opener =
+        variant === "closing"
+          ? `This is the team at ${opts.orgName}. We've reached out a couple of times about ${project} and haven't heard back, so this is our last note before we quiet down and close your file.`
+          : variant === "checkin"
+            ? `This is the team at ${opts.orgName}, just checking in on ${project}. No news needed on our side — we simply didn't want it to slip through the cracks.`
+            : variant === "nudge"
+              ? `This is the team at ${opts.orgName}, circling back on ${project}. Timing shifts all the time — if plans changed, a one-line reply helps us keep your file accurate; if it's still in the works, we're ready when you are.`
+              : `This is the team at ${opts.orgName}. ${followLine} We know priorities shift, so we wanted to check whether it's still on your list.`;
+      const closerLine =
+        variant === "closing"
+          ? "If the timing isn't right, no reply needed — we'll step back. If it's still on your list, one quick reply reopens the conversation."
+          : "If you have questions or anything has changed, just reply to this email — we're glad to help either way.";
       const body = [
         `Hi ${name},`,
         "",
-        `This is the team at ${opts.orgName}. ${followLine} We know priorities shift, so we wanted to check whether it's still on your list.`,
-        urgencyLine(opts.tone),
+        opener,
+        variant === "closing" ? null : urgencyLine(opts.tone),
         "",
-        "If you have questions or anything has changed, just reply to this email — we're glad to help either way.",
+        closerLine,
         "",
         `— The ${opts.orgName} team`,
         opts.includeOptOutLanguage ? `\n${EMAIL_OPT_OUT}` : null,

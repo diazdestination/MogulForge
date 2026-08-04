@@ -19,6 +19,7 @@ import {
   parseMessageContent,
   messageRequestSchema,
   SMS_OPT_OUT,
+  EMAIL_OPT_OUT,
 } from "../lib/rescue-analysis/message-content.ts";
 
 const NOW = new Date("2026-08-01T00:00:00Z");
@@ -310,6 +311,67 @@ test("template sequence only uses channels the lead can actually receive", () =>
   const draft = buildTemplateDraft("sequence", emailOnly, { orgName: "Acme", tone: "professional", includeOptOutLanguage: true });
   assert.ok(draft.steps.length >= 2);
   assert.ok(draft.steps.every((step) => step.channel !== "sms"));
+});
+
+test("follow-up wording varies by attempt number and keeps opt-out language", () => {
+  const lead = makeLead();
+  for (const type of ["sms", "email"]) {
+    const drafts = [1, 2, 3].map((attemptNumber) =>
+      buildTemplateDraft(type, lead, {
+        orgName: "Acme",
+        tone: "professional",
+        includeOptOutLanguage: true,
+        attemptNumber,
+        isFinalAttempt: attemptNumber === 3,
+      }),
+    );
+    const bodies = drafts.map((d) => d.body);
+    assert.notStrictEqual(bodies[0], bodies[1], `${type} attempt 2 must differ from attempt 1`);
+    assert.notStrictEqual(bodies[1], bodies[2], `${type} attempt 3 must differ from attempt 2`);
+    assert.notStrictEqual(bodies[0], bodies[2], `${type} attempt 3 must differ from attempt 1`);
+    const optOut = type === "sms" ? SMS_OPT_OUT : EMAIL_OPT_OUT;
+    for (const body of bodies) assert.ok(body.includes(optOut), `${type} draft must keep opt-out language`);
+    if (type === "email") {
+      const subjects = drafts.map((d) => d.subject);
+      assert.strictEqual(new Set(subjects).size, 3, "email subjects must all differ");
+    }
+  }
+  // Attempt 2 reads as a check-in; the final attempt reads as closing the file.
+  const checkin = buildTemplateDraft("sms", lead, { orgName: "Acme", tone: "professional", includeOptOutLanguage: true, attemptNumber: 2 });
+  assert.ok(/checking in/i.test(checkin.body));
+  const closing = buildTemplateDraft("sms", lead, { orgName: "Acme", tone: "professional", includeOptOutLanguage: true, attemptNumber: 2, isFinalAttempt: true });
+  assert.ok(/close your file/i.test(closing.body));
+});
+
+test("closing wording is reserved for the true final attempt, even with many attempts", () => {
+  const lead = makeLead();
+  const maxAttempts = 5;
+  const draft = (attemptNumber) =>
+    buildTemplateDraft("sms", lead, {
+      orgName: "Acme",
+      tone: "professional",
+      includeOptOutLanguage: true,
+      attemptNumber,
+      isFinalAttempt: attemptNumber >= maxAttempts,
+    });
+  const bodies = [1, 2, 3, 4, 5].map((n) => draft(n).body);
+  // Intermediate attempts (3, 4) must NOT use closing language...
+  assert.ok(!/close your file/i.test(bodies[2]), "attempt 3 of 5 must not read as final");
+  assert.ok(!/close your file/i.test(bodies[3]), "attempt 4 of 5 must not read as final");
+  // ...only the real final attempt does.
+  assert.ok(/close your file/i.test(bodies[4]), "final attempt must use closing wording");
+  // Back-to-back touches never repeat the same body.
+  for (let i = 1; i < bodies.length; i += 1) {
+    assert.notStrictEqual(bodies[i], bodies[i - 1], `attempt ${i + 1} must differ from attempt ${i}`);
+  }
+  // Opt-out is kept everywhere.
+  for (const body of bodies) assert.ok(body.includes(SMS_OPT_OUT));
+});
+
+test("omitting attemptNumber keeps the original first-touch wording", () => {
+  const lead = makeLead({ projectType: null, estimateDate: null });
+  const draft = buildTemplateDraft("sms", lead, { orgName: "Acme", tone: "professional", includeOptOutLanguage: true });
+  assert.ok(draft.body.includes("Is this still something you're considering?"));
 });
 
 test("every template draft validates against its own content schema", () => {
