@@ -24,16 +24,23 @@ import pg from "pg";
 
 process.env.SESSION_SECRET ||= "push-routing-test-secret";
 
-// ---- Workspace connector mock (google-calendar connected & healthy) ----
+// ---- Workspace connector mock (google-calendar + outlook connected & healthy) ----
 const connectorCalls = [];
 globalThis.__connectorsMock = {
   async listConnections() {
-    return [{ connector_name: "google-calendar", status: "connected" }];
+    return [
+      { connector_name: "google-calendar", status: "connected" },
+      { connector_name: "outlook", status: "connected" },
+    ];
   },
   async proxy(connector, path, options) {
     connectorCalls.push({ connector, path, method: options?.method ?? "GET" });
     if ((options?.method ?? "GET") === "POST") {
       return new Response(JSON.stringify({ id: `ws-created-${connectorCalls.length}` }), { status: 200 });
+    }
+    // Outlook GET: return an OutlookEvent shape
+    if (connector === "outlook") {
+      return new Response(JSON.stringify({ id: "ws-outlook-evt", isCancelled: false, start: { dateTime: null, timeZone: "UTC" } }), { status: 200 });
     }
     return new Response(JSON.stringify({ id: "ws-evt", status: "confirmed", start: { dateTime: null } }), { status: 200 });
   },
@@ -62,12 +69,13 @@ const RUN = `calpush${Date.now().toString(36)}`;
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
 const orgIds = [];
 
-async function seedOrg(label) {
+async function seedOrg(label, syncProvider = "google_calendar") {
+  const settings = JSON.stringify({ calendar: { syncProvider } });
   const { rows } = await db.query(
     `INSERT INTO organizations (name, slug, settings)
-     VALUES ($1, $2, '{"calendar":{"syncProvider":"google_calendar"}}'::jsonb)
+     VALUES ($1, $2, $3::jsonb)
      RETURNING id`,
-    [`Cal Push ${label} ${RUN}`, `test-${label}-${RUN}`],
+    [`Cal Push ${label} ${RUN}`, `test-${label}-${RUN}`, settings],
   );
   orgIds.push(rows[0].id);
   return rows[0].id;
@@ -220,4 +228,91 @@ test("inbound pull: a workspace-sourced ref is checked via the connector proxy, 
   assert.ok(orgCall, "org-sourced ref must be looked up directly against googleapis");
   assert.equal(orgCall.auth, `Bearer org-token-pull-${RUN}`);
   assert.equal(connectorCalls.some((c) => c.path.includes(encodeURIComponent(`pull-org-${RUN}`))), false);
+});
+
+// ---------------------------------------------------------------------------
+// Outlook / Microsoft Graph routing — same three assertions as Google above
+// ---------------------------------------------------------------------------
+
+test("outlook org with its own connection: push goes to graph.microsoft.com with the ORG bearer token, ref stored as org-sourced", async () => {
+  const orgId = await seedOrg("outl-own", "outlook_calendar");
+  await db.query(
+    `INSERT INTO org_calendar_connections (organization_id, provider, account_email, access_token_enc, expires_at)
+     VALUES ($1, 'outlook_calendar', 'client-outlook@example.com', $2, now() + interval '1 hour')`,
+    [orgId, encryptToken(`outl-org-token-${RUN}`)],
+  );
+  const apptId = await seedAppointment(orgId);
+  directCalls.length = 0;
+  connectorCalls.length = 0;
+
+  await pushAppointmentToCalendar(orgId, apptId);
+
+  const call = directCalls.find((c) => c.url.includes("graph.microsoft.com") && c.url.includes("/v1.0/me/events"));
+  assert.ok(call, "event create must hit graph.microsoft.com directly");
+  assert.equal(call.method, "POST");
+  assert.equal(call.auth, `Bearer outl-org-token-${RUN}`, "must use the org's own bearer token");
+  assert.equal(connectorCalls.length, 0, "workspace connector must NOT be touched when the org has its own Outlook connection");
+
+  const ref = await externalRefOf(apptId);
+  assert.equal(ref.provider, "outlook_calendar");
+  assert.equal(ref.external_credential_source, "org");
+  assert.match(ref.external_event_id, /^org-created-/);
+});
+
+test("outlook org WITHOUT its own connection: push uses the workspace 'outlook' connector, ref stored as workspace-sourced", async () => {
+  const orgId = await seedOrg("outl-noconn", "outlook_calendar");
+  const apptId = await seedAppointment(orgId);
+  directCalls.length = 0;
+  connectorCalls.length = 0;
+
+  await pushAppointmentToCalendar(orgId, apptId);
+
+  const call = connectorCalls.find((c) => c.path.includes("/v1.0/me/events"));
+  assert.ok(call, "event create must go through the 'outlook' connector proxy");
+  assert.equal(call.connector, "outlook");
+  assert.equal(call.method, "POST");
+  assert.equal(
+    directCalls.filter((c) => c.url.startsWith("https://graph.microsoft.com/")).length,
+    0,
+    "no direct Graph call without an org token",
+  );
+
+  const ref = await externalRefOf(apptId);
+  assert.equal(ref.external_credential_source, "workspace");
+  assert.match(ref.external_event_id, /^ws-created-/);
+});
+
+test("outlook broken (undecryptable) org connection: push fails with a logged error — NEVER falls back to the workspace connector", async () => {
+  const orgId = await seedOrg("outl-broken", "outlook_calendar");
+  // Token encrypted under a different secret simulates a rotated SESSION_SECRET.
+  await db.query(
+    `INSERT INTO org_calendar_connections (organization_id, provider, account_email, access_token_enc, expires_at)
+     VALUES ($1, 'outlook_calendar', 'client-outlook@example.com', $2, now() + interval '1 hour')`,
+    [orgId, encryptToken("unreadable-outlook", "some-other-secret")],
+  );
+  const apptId = await seedAppointment(orgId);
+  directCalls.length = 0;
+  connectorCalls.length = 0;
+
+  const logged = [];
+  const realError = console.error;
+  console.error = (...args) => logged.push(args.map(String).join(" "));
+  try {
+    await pushAppointmentToCalendar(orgId, apptId);
+  } finally {
+    console.error = realError;
+  }
+
+  assert.equal(connectorCalls.length, 0, "broken outlook org connection must never fall back to the workspace account");
+  assert.equal(
+    directCalls.filter((c) => c.url.startsWith("https://graph.microsoft.com/")).length,
+    0,
+    "no Graph API call can be made without a decryptable org token",
+  );
+  assert.ok(
+    logged.some((line) => line.includes(`Calendar push failed for appointment ${apptId}`)),
+    "the failure must be logged",
+  );
+  const ref = await externalRefOf(apptId);
+  assert.equal(ref.external_event_id, null, "no external event ref may be recorded");
 });
