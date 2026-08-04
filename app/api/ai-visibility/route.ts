@@ -5,6 +5,7 @@ import { crawlSite } from "@/lib/visibility-crawler";
 import { scoreCategories, overallScore, fallbackReport } from "@/lib/visibility-score";
 import { getPool } from "@/lib/db";
 import { sendLeadEmails } from "@/lib/lead-emails";
+import { checkScanRequest, clientIpFromHeaders, getVisibilityLimiters } from "@/lib/visibility-guard";
 
 async function saveReport(url: string, email: string, report: VisibilityReport): Promise<string | null> {
   try {
@@ -34,6 +35,22 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     const firstIssue = Object.values(parsed.error.flatten().fieldErrors).flat().find(Boolean);
     return NextResponse.json({ error: firstIssue ?? "Enter a valid website address." }, { status: 400 });
+  }
+
+  // Abuse protection: disposable-email rejection plus per-IP and per-email
+  // throttling, before any crawl or OpenAI spend.
+  const verdict = checkScanRequest(getVisibilityLimiters(), {
+    ip: clientIpFromHeaders(request.headers),
+    email: parsed.data.email,
+  });
+  if (!verdict.allowed) {
+    return NextResponse.json(
+      { error: verdict.error },
+      {
+        status: verdict.status,
+        headers: verdict.retryAfterSeconds ? { "Retry-After": String(verdict.retryAfterSeconds) } : undefined,
+      },
+    );
   }
 
   const crawled = await crawlSite(parsed.data.url);
