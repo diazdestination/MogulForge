@@ -75,3 +75,29 @@ test("log-cleanup deletes old bot_trap_hits and keeps recent ones", async () => 
   const { rows: freshRows } = await db.query("SELECT id FROM bot_trap_hits WHERE id = $1", [state.freshId]);
   assert.equal(freshRows.length, 1, "recent bot_trap_hits row must survive");
 });
+
+test("log-cleanup records a scheduler heartbeat when called with CRON_SECRET", async () => {
+  // Ensure the cron_heartbeats table exists before querying it directly.
+  await db.query(`CREATE TABLE IF NOT EXISTS cron_heartbeats (
+    job text PRIMARY KEY,
+    last_success_at timestamptz NOT NULL DEFAULT now()
+  )`);
+
+  const before = new Date();
+  const res = await fetch(`${BASE}/api/cron/log-cleanup`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+  });
+  assert.equal(res.status, 200);
+
+  // The route must have upserted a heartbeat row for "log-cleanup".
+  const { rows } = await db.query(
+    "SELECT last_success_at FROM cron_heartbeats WHERE job = 'log-cleanup'",
+  );
+  assert.equal(rows.length, 1, "cron_heartbeats must contain a row for log-cleanup");
+  const lastSuccessAt = new Date(rows[0].last_success_at);
+  assert.ok(
+    lastSuccessAt >= before,
+    `heartbeat timestamp ${lastSuccessAt.toISOString()} should be at or after the request start ${before.toISOString()}`,
+  );
+});
