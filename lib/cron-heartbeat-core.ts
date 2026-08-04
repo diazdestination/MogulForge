@@ -57,6 +57,46 @@ export async function getSchedulerHealth(deps: Pick<HeartbeatDeps, "query" | "no
   return { hasHeartbeat: true, lastSuccessAt, minutesSinceLast, stale: minutesSinceLast >= STALE_AFTER_MINUTES };
 }
 
+/** Jobs that record heartbeats when hit by the external scheduler. */
+export const KNOWN_CRON_JOBS = [
+  "webhook-deliveries",
+  "lead-digest",
+  "domain-health",
+  "crm-delivery-cleanup",
+] as const;
+
+export type JobHeartbeat = {
+  job: string;
+  /** last successful external hit for this job, or null when never seen */
+  lastSuccessAt: Date | null;
+  /** minutes since the last hit (null when never seen) */
+  minutesSinceLast: number | null;
+  /** true when this specific job is quiet (never seen or 30+ minutes old) */
+  stale: boolean;
+};
+
+/**
+ * Per-job heartbeat status. Known jobs always appear (with null when never
+ * recorded); unknown-but-recorded jobs are included too so nothing is hidden.
+ */
+export async function getJobHeartbeats(deps: Pick<HeartbeatDeps, "query" | "now">): Promise<JobHeartbeat[]> {
+  const { rows } = await deps.query(`SELECT job, last_success_at FROM cron_heartbeats`);
+  const seen = new Map<string, Date>();
+  for (const row of rows) {
+    const job = String(row.job);
+    const raw = row.last_success_at;
+    if (raw) seen.set(job, new Date(raw as string | Date));
+  }
+  const jobs = [...KNOWN_CRON_JOBS, ...[...seen.keys()].filter((j) => !(KNOWN_CRON_JOBS as readonly string[]).includes(j)).sort()];
+  const nowMs = deps.now().getTime();
+  return jobs.map((job) => {
+    const lastSuccessAt = seen.get(job) ?? null;
+    if (!lastSuccessAt) return { job, lastSuccessAt: null, minutesSinceLast: null, stale: true };
+    const minutesSinceLast = Math.floor((nowMs - lastSuccessAt.getTime()) / 60_000);
+    return { job, lastSuccessAt, minutesSinceLast, stale: minutesSinceLast >= STALE_AFTER_MINUTES };
+  });
+}
+
 export type StaleAlertOutcome = "sent" | "healthy" | "no-heartbeat-yet" | "cooldown" | "not-configured" | "send-failed";
 
 /**

@@ -1,15 +1,17 @@
 import "server-only";
 import { getPool } from "@/lib/db";
 import {
+  getJobHeartbeats,
   getSchedulerHealth,
   maybeSendStaleSchedulerAlert,
   recordCronHeartbeat,
+  type JobHeartbeat,
   type QueryFn,
   type SchedulerHealth,
 } from "@/lib/cron-heartbeat-core";
 
 export { STALE_AFTER_MINUTES } from "@/lib/cron-heartbeat-core";
-export type { SchedulerHealth } from "@/lib/cron-heartbeat-core";
+export type { JobHeartbeat, SchedulerHealth } from "@/lib/cron-heartbeat-core";
 
 let ensured = false;
 async function ensureTables(query: QueryFn) {
@@ -46,6 +48,13 @@ export async function readSchedulerHealth(): Promise<SchedulerHealth> {
   const d = deps();
   await ensureTables(d.query);
   return getSchedulerHealth(d);
+}
+
+/** Per-job heartbeat rows for the admin dashboard status card. */
+export async function readJobHeartbeats(): Promise<JobHeartbeat[]> {
+  const d = deps();
+  await ensureTables(d.query);
+  return getJobHeartbeats(d);
 }
 
 /** Watchdog: emails platform admins if the scheduler has gone quiet. */

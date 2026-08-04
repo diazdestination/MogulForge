@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/admin-auth";
-import { readSchedulerHealth, STALE_AFTER_MINUTES, type SchedulerHealth } from "@/lib/cron-heartbeat";
+import { readJobHeartbeats, readSchedulerHealth, STALE_AFTER_MINUTES, type JobHeartbeat, type SchedulerHealth } from "@/lib/cron-heartbeat";
 import { listOrganizations } from "@/lib/tenant";
 import { PLAN_LABELS } from "@/lib/plans";
 
@@ -26,18 +26,53 @@ function SchedulerWarning({ health }: { health: SchedulerHealth }) {
   </div>;
 }
 
+function formatAgo(minutes: number): string {
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} days ago`;
+}
+
+function JobStatusCard({ jobs }: { jobs: JobHeartbeat[] }) {
+  if (jobs.length === 0) return null;
+  return <div className="mb-8 rounded-xl border border-white/10 bg-white/[.03] px-5 py-4">
+    <div className="flex items-baseline justify-between gap-4">
+      <p className="text-xs font-bold uppercase tracking-wider text-white/50">Background jobs</p>
+      <p className="text-xs text-white/40">Expected at least every {STALE_AFTER_MINUTES} min via the external scheduler</p>
+    </div>
+    <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+      {jobs.map((job) => <li key={job.job} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${job.stale ? "border-red-400/40 bg-red-500/10" : "border-white/10"}`}>
+        <span className="flex items-center gap-2 font-mono text-xs">
+          <span aria-hidden className={`h-2 w-2 rounded-full ${job.stale ? "bg-red-400" : "bg-forge-lime"}`} />
+          <span className={job.stale ? "text-red-200" : "text-white/80"}>{job.job}</span>
+        </span>
+        <span className={`whitespace-nowrap text-xs ${job.stale ? "font-bold text-red-300" : "text-white/50"}`} title={job.lastSuccessAt ? job.lastSuccessAt.toISOString() : undefined}>
+          {job.lastSuccessAt ? `Last run ${formatAgo(job.minutesSinceLast ?? 0)}` : "Never run"}
+        </span>
+      </li>)}
+    </ul>
+  </div>;
+}
+
 export default async function AdminOrganizationsPage() {
   if (!(await isPlatformAdmin())) redirect("/admin/login?next=/admin/organizations");
-  const [organizations, schedulerHealth] = await Promise.all([
+  const [organizations, schedulerHealth, jobHeartbeats] = await Promise.all([
     listOrganizations(),
     readSchedulerHealth().catch((error): SchedulerHealth => {
       console.error("Failed to read scheduler health", error);
       return { hasHeartbeat: true, lastSuccessAt: null, minutesSinceLast: 0, stale: false };
     }),
+    readJobHeartbeats().catch((error): JobHeartbeat[] => {
+      console.error("Failed to read job heartbeats", error);
+      return [];
+    }),
   ]);
   return <section className="shell py-16">
     <div className="mx-auto max-w-5xl">
       <SchedulerWarning health={schedulerHealth} />
+      <JobStatusCard jobs={jobHeartbeats} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">MogulForge Admin</p>

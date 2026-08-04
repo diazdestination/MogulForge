@@ -139,3 +139,32 @@ test("alert: failed send releases the cooldown claim for retry", async () => {
   assert.equal(s.state.lastAlertedAt, null); // claim released
   assert.equal(await maybeSendStaleSchedulerAlert(deps), "sent");
 });
+
+// --- getJobHeartbeats ---
+import { getJobHeartbeats, KNOWN_CRON_JOBS } from "../lib/cron-heartbeat-core.ts";
+
+test("getJobHeartbeats lists known jobs with never-run flagged stale", async () => {
+  const now = new Date("2026-08-04T12:00:00Z");
+  const query = async () => ({
+    rows: [
+      { job: "webhook-deliveries", last_success_at: new Date("2026-08-04T11:55:00Z") },
+      { job: "lead-digest", last_success_at: new Date("2026-08-04T10:00:00Z") },
+      { job: "custom-extra", last_success_at: new Date("2026-08-04T11:59:00Z") },
+    ],
+    rowCount: 3,
+  });
+  const jobs = await getJobHeartbeats({ query, now: () => now });
+  const byName = Object.fromEntries(jobs.map((j) => [j.job, j]));
+  // healthy job
+  assert.equal(byName["webhook-deliveries"].stale, false);
+  assert.equal(byName["webhook-deliveries"].minutesSinceLast, 5);
+  // lagging job flagged even though another is healthy
+  assert.equal(byName["lead-digest"].stale, true);
+  assert.equal(byName["lead-digest"].minutesSinceLast, 120);
+  // known-but-never-run jobs appear and are stale
+  for (const known of KNOWN_CRON_JOBS) assert.ok(byName[known], `missing ${known}`);
+  assert.equal(byName["domain-health"].stale, true);
+  assert.equal(byName["domain-health"].lastSuccessAt, null);
+  // unknown recorded jobs are included too
+  assert.equal(byName["custom-extra"].stale, false);
+});
