@@ -63,6 +63,8 @@ export const KNOWN_CRON_JOBS = [
   "lead-digest",
   "domain-health",
   "crm-delivery-cleanup",
+  "plan-changes",
+  "calendar-sync",
 ] as const;
 
 export type JobHeartbeat = {
