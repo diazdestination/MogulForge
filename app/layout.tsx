@@ -56,6 +56,9 @@ export async function generateMetadata(): Promise<Metadata> {
       title: { default: branding.portalTitle, template: `%s | ${branding.displayName}` },
       description: `${branding.displayName} client portal`,
       robots: { index: false, follow: false },
+      // The client's own logo in the browser tab — never the MogulForge favicon
+      // on a branded domain. Orgs without a logo get no icon rather than ours.
+      ...(branding.logoUrl ? { icons: { icon: branding.logoUrl, apple: branding.logoUrl } } : {}),
     };
   }
   if (context.kind === "unknown_domain") {

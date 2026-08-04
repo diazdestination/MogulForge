@@ -12,4 +12,5 @@
 - [Live messaging providers](live-messaging-providers.md) — env-driven Twilio/Resend outreach adapters; never reuse the digest RESEND_API_KEY for outreach; webhooks 404 while unconfigured.
 - [Portal chrome host-gating](portal-chrome-gating.md) — custom-domain chrome swaps in the root layout; marketing routes are blocked in the DB-free proxy via an allow-list of portal path prefixes.
 - [Calendar connectors](calendar-connectors.md) — Google/Outlook/Calendly sync uses workspace-level Replit connectors (no per-org OAuth); org settings pick the sync target; connector state resolved live, fail-closed.
+- [OG image rendering pitfalls](og-image-satori.md) — inline remote logos as data URLs with explicit dims or Satori 500s; portal proxy allow-list must include /opengraph-image.
 - [Test suite serialization](test-suite-serialization.md) — never run `npm test` (all files parallel) against next dev; provisioning stampedes hang the server. Run test files one at a time.

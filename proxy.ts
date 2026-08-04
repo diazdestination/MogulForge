@@ -12,7 +12,7 @@ import { isPlatformHost, normalizeHostHeader, platformHostsFromEnv } from "./lib
  *    owning org's branded portal or an honest "not connected" page.
  */
 /** Paths that are allowed to serve on a custom-domain (portal) host. */
-const PORTAL_PATH_PREFIXES = ["/login", "/dashboard", "/account", "/portal", "/invite", "/embed", "/api"];
+const PORTAL_PATH_PREFIXES = ["/login", "/dashboard", "/account", "/portal", "/invite", "/embed", "/api", "/opengraph-image"];
 
 function isPortalPath(pathname: string): boolean {
   return PORTAL_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
