@@ -155,8 +155,11 @@ const CREAM = "#f3f0e8";
 const LIME = "#c9f75d";
 const MOSS = "#23332b";
 
-function prospectHtml(deps: LeadEmailDeps, lead: LeadEmailInput, reportUrl: string) {
+function prospectHtml(deps: LeadEmailDeps, lead: LeadEmailInput, reportUrl: string, hasPdfAttachment: boolean) {
   const host = escapeHtml(hostOf(lead.url));
+  const pdfLine = hasPdfAttachment
+    ? `<p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#374151;">Your full branded report is also attached as a PDF — keep it handy or share it with your team.</p>`
+    : "";
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:${INK};max-width:600px;margin:0 auto;">
     <div style="background:${INK};padding:28px 32px;border-radius:12px 12px 0 0;">
       <p style="margin:0;color:${LIME};font-size:13px;letter-spacing:2px;text-transform:uppercase;">MogulForge</p>
@@ -174,6 +177,7 @@ function prospectHtml(deps: LeadEmailDeps, lead: LeadEmailInput, reportUrl: stri
       <div style="text-align:center;margin:0 0 24px;">
         <a href="${reportUrl}" style="display:inline-block;background:${LIME};color:${INK};font-weight:bold;font-size:15px;padding:14px 28px;border-radius:8px;text-decoration:none;">View your full report</a>
       </div>
+      ${pdfLine}
       <div style="border-top:1px solid #e5e7eb;padding-top:20px;">
         <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#374151;"><strong>Every point below 100 is revenue leaking to competitors AI recommends instead of you.</strong> Our AI Revenue Rescue™ finds those leaks and installs the systems that recover them.</p>
         <a href="${deps.siteUrl}/#book" style="display:inline-block;background:${MOSS};color:${CREAM};font-weight:bold;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">Book a free strategy call</a>
@@ -226,7 +230,7 @@ export async function sendLeadEmailsCore(lead: LeadEmailInput, deps: LeadEmailDe
         await sendViaResend(deps, {
           to: lead.email,
           subject: `Your AI Visibility Score: ${lead.score}/100 — full report inside`,
-          html: prospectHtml(deps, lead, reportUrl),
+          html: prospectHtml(deps, lead, reportUrl, (attachments?.length ?? 0) > 0),
           attachments,
         });
       } catch (error) {

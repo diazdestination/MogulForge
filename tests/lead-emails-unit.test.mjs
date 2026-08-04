@@ -156,6 +156,7 @@ test("renderPdf attachment rides the prospect email only", async () => {
   await sendLeadEmailsCore(LEAD, d);
   assert.equal(stub.sent.length, 2);
   assert.deepEqual(stub.sent[0].attachments, [{ filename: "report.pdf", content: "cGRm" }]);
+  assert.ok(stub.sent[0].html.includes("attached as a PDF")); // body copy mentions the attachment
   assert.equal("attachments" in stub.sent[1], false); // hot alert has no attachment
 });
 
@@ -168,6 +169,7 @@ test("renderPdf failure or null still sends the email without an attachment", as
   await sendLeadEmailsCore(LEAD, d);
   assert.equal(stub.sent.length, 2);
   assert.equal("attachments" in stub.sent[0], false);
+  assert.equal(stub.sent[0].html.includes("attached as a PDF"), false); // no false promise when attachment missing
 
   const stub2 = makeFetch();
   const d2 = deps(makeStore(), stub2);
