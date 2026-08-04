@@ -12,11 +12,11 @@ function csvField(value: string) {
 export async function GET() {
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { rows } = await getPool().query(
-    "SELECT email, url, score, created_at FROM visibility_reports ORDER BY created_at DESC",
+    "SELECT email, url, score, status, created_at FROM visibility_reports ORDER BY created_at DESC",
   );
-  const lines = ["email,website,score,date"];
+  const lines = ["email,website,score,status,date"];
   for (const row of rows) {
-    lines.push([csvField(row.email ?? ""), csvField(row.url ?? ""), String(row.score), new Date(row.created_at).toISOString()].join(","));
+    lines.push([csvField(row.email ?? ""), csvField(row.url ?? ""), String(row.score), csvField(row.status ?? "new"), new Date(row.created_at).toISOString()].join(","));
   }
   return new NextResponse(lines.join("\n") + "\n", {
     headers: {
