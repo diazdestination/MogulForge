@@ -105,6 +105,22 @@ export async function listOrganizations(): Promise<(Organization & { memberCount
   return rows.map((row) => ({ ...mapOrg(row), memberCount: row.member_count }));
 }
 
+/** Support-console lookup: matches org name, slug, or a member's email/name (case-insensitive substring). */
+export async function searchOrganizations(query: string): Promise<(Organization & { memberCount: number })[]> {
+  const pattern = `%${query.trim().replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+  const { rows } = await getPool().query(
+    `SELECT o.*, (SELECT count(*)::int FROM memberships m WHERE m.organization_id = o.id) AS member_count
+     FROM organizations o
+     WHERE o.name ILIKE $1 OR o.slug ILIKE $1 OR EXISTS (
+       SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
+       WHERE m.organization_id = o.id AND (u.email ILIKE $1 OR u.name ILIKE $1)
+     )
+     ORDER BY o.created_at DESC`,
+    [pattern],
+  );
+  return rows.map((row) => ({ ...mapOrg(row), memberCount: row.member_count }));
+}
+
 export async function updateOrganization(
   organizationId: string,
   patch: Partial<Pick<Organization, "name" | "industry" | "timezone" | "plan" | "status" | "brandPrimaryColor" | "brandSecondaryColor" | "logoUrl" | "allowedOrigins" | "usageLimits" | "brandingLevel" | "displayName" | "portalTitle" | "loginTitle" | "supportEmail" | "supportPhone" | "emailSenderName" | "smsSenderName" | "poweredByLabel" | "embedTheme">>,

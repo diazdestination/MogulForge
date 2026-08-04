@@ -26,6 +26,7 @@ export default async function AdminOrganizationsPage() {
           <p className="mt-2 text-sm text-white/50">{organizations.length} organization{organizations.length === 1 ? "" : "s"}</p>
         </div>
         <div className="flex gap-3">
+          <Link href="/admin/support" className="btn-secondary">Support</Link>
           <Link href="/admin/subscriptions" className="btn-secondary">Subscriptions</Link>
           <Link href="/admin/usage" className="btn-secondary">Usage</Link>
           <Link href="/admin/audit-logs" className="btn-secondary">Audit logs</Link>
