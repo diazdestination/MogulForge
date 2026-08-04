@@ -135,6 +135,15 @@ test("matches by normalized phone when email is absent", async () => {
   assert.equal((await leadRow(leadId)).first_name, "Pat");
 });
 
+test("matches by phone when the remote number carries a +1 country code and the local one does not", async () => {
+  const leadId = await insertLead({ phone: "(555) 644-9001", phoneNormalized: "5556449001" });
+  hubspotResults([{ id: "m2cc", firstName: "Cody", phone: "+1 555 644 9001" }]);
+  const summary = await pull();
+  assert.equal(summary.matched, 1);
+  assert.equal(summary.unmatched, 0);
+  assert.equal((await leadRow(leadId)).first_name, "Cody");
+});
+
 test("matches by external_record_id when email and phone are both missing", async () => {
   const leadId = await insertLead({ externalRecordId: "hubspot:ext77" });
   hubspotResults([{ id: "ext77", lastName: "Rivera" }]);

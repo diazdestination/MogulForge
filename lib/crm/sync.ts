@@ -183,8 +183,11 @@ export async function pullCrmUpdates(
       conditions.push(`email_normalized = $${params.length}`);
     }
     if (phone) {
-      params.push(phone);
-      conditions.push(`phone_normalized = $${params.length}`);
+      // Match on the last 10 digits so "+1 555 644 9001" (normalized
+      // "15556449001") still finds a lead stored as "5556449001" — the same
+      // US number with and without a country code.
+      params.push(phone.slice(-10));
+      conditions.push(`RIGHT(phone_normalized, 10) = $${params.length}`);
     }
     const { rows } = await pool.query(
       `SELECT id, first_name, last_name, updated_at FROM rescue_leads
