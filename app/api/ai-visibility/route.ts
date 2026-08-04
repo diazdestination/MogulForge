@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOpenAIClient } from "@/lib/openai";
-import { isBotSubmission, visibilityInputSchema, type VisibilityReport } from "@/lib/visibility-schema";
+import { botSubmissionReason, visibilityInputSchema, type VisibilityReport } from "@/lib/visibility-schema";
+import { recordBotTrapHit } from "@/lib/bot-trap-metrics";
 import { crawlSite } from "@/lib/visibility-crawler";
 import { scoreCategories, overallScore, fallbackReport } from "@/lib/visibility-score";
 import { getPool } from "@/lib/db";
@@ -36,7 +37,11 @@ export async function POST(request: Request) {
 
   // Honeypot + time-to-submit bot trap: fail silently with a fake success so
   // automated form-fillers think they succeeded, at zero crawl/AI cost.
-  if (isBotSubmission(body)) {
+  const trapReason = botSubmissionReason(body);
+  if (trapReason) {
+    // Count the hit (reason only, never the bot's data) so admins can spot
+    // the trap over-blocking real visitors. recordBotTrapHit never throws.
+    await recordBotTrapHit(trapReason);
     return NextResponse.json({ result: null, reportId: null, mode: "queued" });
   }
 

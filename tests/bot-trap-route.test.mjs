@@ -6,7 +6,8 @@
  *   the trap short-circuits before any crawl or AI spend
  * - a human-speed submission passes the trap and reaches validation
  *
- * Requires the dev server on port 5000. No DB rows are written by the trap.
+ * Requires the dev server on port 5000. The trap writes only a bot_trap_hits
+ * metric row (reason + timestamp) — never the bot's submitted data.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

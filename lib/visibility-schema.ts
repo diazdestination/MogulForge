@@ -15,12 +15,20 @@ export type VisibilityInput = z.infer<typeof visibilityInputSchema>;
 // honeypot, omit elapsedMs, or submit near-instantly.
 export const MIN_SUBMIT_MS = 2000;
 
-export function isBotSubmission(body: unknown): boolean {
-  if (typeof body !== "object" || body === null) return false;
+// Why a trap fired, for over-blocking monitoring. Never includes any of the
+// submission's data — only the trigger category.
+export type BotTrapReason = "honeypot" | "missing_elapsed" | "too_fast";
+
+export function botSubmissionReason(body: unknown): BotTrapReason | null {
+  if (typeof body !== "object" || body === null) return null;
   const record = body as Record<string, unknown>;
-  if (typeof record.website === "string" && record.website.trim() !== "") return true;
-  if (typeof record.elapsedMs !== "number" || !Number.isFinite(record.elapsedMs)) return true;
-  return record.elapsedMs < MIN_SUBMIT_MS;
+  if (typeof record.website === "string" && record.website.trim() !== "") return "honeypot";
+  if (typeof record.elapsedMs !== "number" || !Number.isFinite(record.elapsedMs)) return "missing_elapsed";
+  return record.elapsedMs < MIN_SUBMIT_MS ? "too_fast" : null;
+}
+
+export function isBotSubmission(body: unknown): boolean {
+  return botSubmissionReason(body) !== null;
 }
 
 export type CategoryScore = { name: string; score: number; findings: string[] };

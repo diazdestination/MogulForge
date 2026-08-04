@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/admin-auth";
 import { readJobHeartbeats, readSchedulerHealth, STALE_AFTER_MINUTES, type JobHeartbeat, type SchedulerHealth } from "@/lib/cron-heartbeat";
+import { readBotTrapStats, type BotTrapStats } from "@/lib/bot-trap-metrics";
 import { listOrganizations } from "@/lib/tenant";
 import { PLAN_LABELS } from "@/lib/plans";
 
@@ -56,9 +57,37 @@ function JobStatusCard({ jobs }: { jobs: JobHeartbeat[] }) {
   </div>;
 }
 
+const TRAP_REASON_LABELS: Record<string, string> = {
+  honeypot: "Honeypot filled",
+  missing_elapsed: "No timer value",
+  too_fast: "Submitted too fast",
+};
+
+function BotTrapCard({ stats }: { stats: BotTrapStats | null }) {
+  if (!stats) return null;
+  const baseline = stats.baselinePerDay >= 10 ? Math.round(stats.baselinePerDay) : Math.round(stats.baselinePerDay * 10) / 10;
+  return <div className={`mb-8 rounded-xl border px-5 py-4 ${stats.spike ? "border-red-400/40 bg-red-500/10" : "border-white/10 bg-white/[.03]"}`}>
+    <div className="flex items-baseline justify-between gap-4">
+      <p className={`text-xs font-bold uppercase tracking-wider ${stats.spike ? "text-red-300" : "text-white/50"}`}>Scan-form bot trap</p>
+      <p className="text-xs text-white/40">7-day baseline: {baseline} hit{baseline === 1 ? "" : "s"}/day</p>
+    </div>
+    {stats.spike && <p className="mt-2 text-sm font-bold text-red-200">
+      Unusual spike: {stats.last24hTotal} hits in the last 24 hours vs. a baseline of {baseline}/day. A browser extension or autofill pattern may be tripping the trap for real visitors — review the reasons below.
+    </p>}
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
+      <span className={stats.spike ? "font-bold text-red-200" : "text-white/80"}>
+        {stats.last24hTotal} hit{stats.last24hTotal === 1 ? "" : "s"} in the last 24h
+      </span>
+      {(["honeypot", "missing_elapsed", "too_fast"] as const).map((reason) => <span key={reason} className="text-xs text-white/50">
+        {TRAP_REASON_LABELS[reason]}: <span className="font-mono text-white/70">{stats.last24h[reason]}</span>
+      </span>)}
+    </div>
+  </div>;
+}
+
 export default async function AdminOrganizationsPage() {
   if (!(await isPlatformAdmin())) redirect("/admin/login?next=/admin/organizations");
-  const [organizations, schedulerHealth, jobHeartbeats] = await Promise.all([
+  const [organizations, schedulerHealth, jobHeartbeats, botTrapStats] = await Promise.all([
     listOrganizations(),
     readSchedulerHealth().catch((error): SchedulerHealth => {
       console.error("Failed to read scheduler health", error);
@@ -68,11 +97,16 @@ export default async function AdminOrganizationsPage() {
       console.error("Failed to read job heartbeats", error);
       return [];
     }),
+    readBotTrapStats().catch((error): null => {
+      console.error("Failed to read bot-trap stats", error);
+      return null;
+    }),
   ]);
   return <section className="shell py-16">
     <div className="mx-auto max-w-5xl">
       <SchedulerWarning health={schedulerHealth} />
       <JobStatusCard jobs={jobHeartbeats} />
+      <BotTrapCard stats={botTrapStats} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">MogulForge Admin</p>
