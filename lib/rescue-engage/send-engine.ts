@@ -43,6 +43,33 @@ export class ActivationError extends Error {
 
 const SEND_BATCH_LIMIT = 500;
 
+/**
+ * Maximum number of AI draft requests to run in parallel during a send pass.
+ * Each slot is one OpenAI round-trip, so 8 keeps the model busy without
+ * overwhelming the rate limit or the DB connection pool.
+ */
+const DRAFT_CONCURRENCY = 8;
+
+/**
+ * Runs `fn` over every item with at most `concurrency` promises in-flight at
+ * once. Safe against an empty array. Pure JS — no extra dependencies.
+ */
+async function withConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let idx = 0;
+  async function worker(): Promise<void> {
+    while (idx < items.length) {
+      const item = items[idx++];
+      await fn(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+}
+
 export type ActivationResult = {
   campaign: Campaign;
   enrolled: number;
@@ -160,16 +187,17 @@ export async function runLiveSends(
   let failedSends = 0;
   let skippedNoContact = 0;
   let skippedNoConsent = 0;
-  for (const row of rows) {
+
+  await withConcurrency(rows, DRAFT_CONCURRENCY, async (row) => {
     const lead = mapLeadFacts(row);
     const to = campaign.channel === "sms" ? lead.phoneNormalized : lead.emailNormalized;
     if (!to) {
       skippedNoContact += 1;
-      continue;
+      return;
     }
     if (campaign.channel === "sms" && lead.consentStatus !== "express" && lead.consentStatus !== "implied") {
       skippedNoConsent += 1;
-      continue;
+      return;
     }
     // Per-lead booking URL: the /book/<token> link is minted with this lead's
     // id so a booking is attributable, falling back to the org's saved
@@ -195,7 +223,7 @@ export async function runLiveSends(
         bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
       }, orgName));
     } catch (error) {
-      if (error instanceof SuppressedLeadError) continue; // suppressed since enrollment — never message
+      if (error instanceof SuppressedLeadError) return; // suppressed since enrollment — never message
       throw error;
     }
     const rawSubject = typeof content.subject === "string" ? content.subject : null;
@@ -239,7 +267,7 @@ export async function runLiveSends(
         actorUserId,
       });
     }
-  }
+  });
   if (liveSends > 0 || failedSends > 0) {
     await logActivity({
       organizationId,
@@ -285,12 +313,13 @@ export async function runSimulatedSends(
   const baseUrl = publicBaseUrl();
   let simulatedSends = 0;
   let skippedNoContact = 0;
-  for (const row of rows) {
+
+  await withConcurrency(rows, DRAFT_CONCURRENCY, async (row) => {
     const lead = mapLeadFacts(row);
     const hasContact = campaign.channel === "sms" ? !!lead.phoneNormalized : !!lead.emailNormalized;
     if (!hasContact) {
       skippedNoContact += 1;
-      continue;
+      return;
     }
     const bookingLink = resolveBookingLink({
       organizationId,
@@ -312,7 +341,7 @@ export async function runSimulatedSends(
         bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
       }, orgName));
     } catch (error) {
-      if (error instanceof SuppressedLeadError) continue; // suppressed since enrollment — never message
+      if (error instanceof SuppressedLeadError) return; // suppressed since enrollment — never message
       throw error;
     }
     const rawSubject = typeof content.subject === "string" ? content.subject : null;
@@ -336,7 +365,7 @@ export async function runSimulatedSends(
       [organizationId, lead.id],
     );
     simulatedSends += 1;
-  }
+  });
   if (simulatedSends > 0) {
     await logActivity({
       organizationId,
