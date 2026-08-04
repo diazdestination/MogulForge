@@ -358,10 +358,10 @@ export async function sendDuePendingPlanChangeReminders(now: Date = new Date()):
   );
   if (rows.length === 0) return [];
 
-  const [{ sendOrgAlert }, { buildPlanChangeReminderEmail }, { SITE_URL }, { logAudit }] = await Promise.all([
+  const [{ sendOrgAlert }, { buildPlanChangeReminderEmail }, { getOrgPortalBaseUrl }, { logAudit }] = await Promise.all([
     import("./org-alerts"),
     import("./org-alerts-content"),
-    import("./site"),
+    import("./custom-domains"),
     import("./audit"),
   ]);
 
@@ -369,6 +369,9 @@ export async function sendDuePendingPlanChangeReminders(now: Date = new Date()):
   for (const row of rows) {
     const effectiveAt = new Date(row.pending_plan_effective_at);
     try {
+      // Link to the org's branded portal domain when one is active, so the
+      // email feels first-party and matches the client's login session.
+      const baseUrl = await getOrgPortalBaseUrl(row.organization_id);
       const result = await sendOrgAlert(
         row.organization_id,
         "planChangeReminders",
@@ -377,7 +380,7 @@ export async function sendDuePendingPlanChangeReminders(now: Date = new Date()):
           currentPlanName: row.current_plan_name ?? "your current plan",
           pendingPlanName: row.pending_plan_name ?? row.pending_plan_id,
           effectiveAt,
-          planPageUrl: `${SITE_URL}/dashboard/revenue-rescue/plan`,
+          planPageUrl: `${baseUrl}/dashboard/revenue-rescue/plan`,
         }),
       );
       if (result.status === "sent") {

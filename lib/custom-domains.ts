@@ -108,6 +108,26 @@ export async function markDomainSslIssuedFromTraffic(domainId: string): Promise<
   );
 }
 
+/**
+ * Base URL for links in org-facing emails: the org's active (verified +
+ * routed) custom domain when one exists, otherwise the platform SITE_URL.
+ * Returns an origin with no trailing slash, e.g. "https://portal.client.com".
+ * Alert emails should build their links from this so they land on the org's
+ * branded portal (matching the login session the client actually uses).
+ */
+export async function getOrgPortalBaseUrl(organizationId: string): Promise<string> {
+  const { rows } = await getPool().query(
+    `SELECT domain FROM custom_domains
+     WHERE organization_id = $1 AND status = 'active'
+     ORDER BY activated_at DESC NULLS LAST, created_at DESC
+     LIMIT 1`,
+    [organizationId],
+  );
+  if (rows[0]?.domain) return `https://${String(rows[0].domain).toLowerCase()}`;
+  const { SITE_URL } = await import("./site");
+  return SITE_URL;
+}
+
 export class DomainRequestError extends Error {
   status: number;
   constructor(message: string, status = 400) {
