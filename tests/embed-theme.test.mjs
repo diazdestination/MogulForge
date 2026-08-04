@@ -1,0 +1,198 @@
+/**
+ * Integration tests for embed theming over live HTTP against the dev server
+ * and the real database:
+ * - PATCH /api/orgs/:orgId/integrations/embed-theme normalizes and stores the
+ *   org-default theme (rejecting unsafe values by falling back)
+ * - /api/embed/branding returns the normalized theme for a valid embed session
+ * - the served /embed/v1/loader.js contains the theme param whitelist
+ *   (t_mode/t_accent/t_bg/t_radius/t_logo) so per-mount overrides pass through
+ *
+ * Requires the dev server on port 5000, DATABASE_URL, and ADMIN_PASSWORD.
+ */
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import pg from "pg";
+
+const BASE = process.env.TEST_BASE_URL ?? "http://127.0.0.1:5000";
+const RUN = `theme${Date.now().toString(36)}`;
+const APPROVED_ORIGIN = "https://client.example.com";
+const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+async function request(path, { method = "GET", body, cookie, headers = {} } = {}) {
+  const response = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    redirect: "manual",
+  });
+  const setCookie = response.headers.getSetCookie?.() ?? [];
+  const sessionCookie = setCookie.map((c) => c.split(";")[0]).join("; ") || null;
+  const json = (response.headers.get("content-type") ?? "").includes("application/json")
+    ? await response.json().catch(() => null)
+    : null;
+  return { status: response.status, json, cookie: sessionCookie, headers: response.headers };
+}
+
+const state = {};
+
+async function cleanup() {
+  await db.query("DELETE FROM organizations WHERE slug LIKE 'test-theme%'");
+  await db.query("DELETE FROM users WHERE email LIKE '%@rescue-theme-test.local'");
+}
+
+before(async () => {
+  await db.connect();
+  await cleanup();
+
+  assert.ok(process.env.ADMIN_PASSWORD, "ADMIN_PASSWORD must be set for tests");
+  const adminLogin = await request("/api/admin/session", { method: "POST", body: { password: process.env.ADMIN_PASSWORD } });
+  assert.equal(adminLogin.status, 200);
+
+  const provision = await request("/api/admin/organizations", {
+    method: "POST",
+    cookie: adminLogin.cookie,
+    body: {
+      name: `Test ${RUN} EmbedTheme`,
+      slug: `test-${RUN}`,
+      plan: "growth",
+      modules: ["revenue_rescue", "api_access"],
+      usageLimits: { seats: 5 },
+      allowedOrigins: [APPROVED_ORIGIN],
+      owner: { email: `owner-${RUN}@rescue-theme-test.local`, name: "Owner" },
+    },
+  });
+  assert.equal(provision.status, 201, JSON.stringify(provision.json));
+  state.org = provision.json.organizationId;
+
+  const accept = await request("/api/invites/accept", {
+    method: "POST",
+    body: { token: provision.json.inviteToken, name: "Owner", password: "password-theme-123" },
+  });
+  assert.equal(accept.status, 200);
+  state.owner = accept.cookie;
+
+  const created = await request(`/api/orgs/${state.org}/integrations/api-keys`, {
+    method: "POST",
+    cookie: state.owner,
+    body: { name: "Embed", scopes: ["embed:write"] },
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.json));
+  state.apiKey = created.json.rawKey;
+});
+
+after(async () => {
+  await cleanup();
+  await db.end();
+});
+
+async function mintEmbedToken() {
+  const issued = await request("/api/v1/embed/sessions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${state.apiKey}` },
+    body: { origin: APPROVED_ORIGIN, modules: ["dashboard"] },
+  });
+  assert.equal(issued.status, 201, JSON.stringify(issued.json));
+  return issued.json.data.token;
+}
+
+async function fetchBrandingTheme() {
+  const token = await mintEmbedToken();
+  const res = await request("/api/embed/branding", {
+    headers: { Authorization: `Bearer ${token}`, Origin: APPROVED_ORIGIN },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  assert.ok(res.json.branding, "branding payload expected");
+  assert.ok(res.json.branding.theme, "branding payload must include the theme");
+  return res.json.branding.theme;
+}
+
+test("PATCH embed-theme saves a valid theme and /api/embed/branding returns it normalized", async () => {
+  const saved = await request(`/api/orgs/${state.org}/integrations/embed-theme`, {
+    method: "PATCH",
+    cookie: state.owner,
+    body: { theme: { mode: "light", accentColor: "#0aF", backgroundColor: "#102030", radius: "sm", logoUrl: "https://cdn.example.com/logo.png" } },
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.json));
+  assert.deepEqual(saved.json.theme, {
+    mode: "light",
+    accentColor: "#0aF",
+    backgroundColor: "#102030",
+    radius: "sm",
+    logoUrl: "https://cdn.example.com/logo.png",
+  });
+
+  // GET reads the same stored theme back for the org settings UI.
+  const read = await request(`/api/orgs/${state.org}/integrations/embed-theme`, { cookie: state.owner });
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.json.theme, saved.json.theme);
+
+  // The embed session sees exactly the stored theme in the branding payload.
+  const theme = await fetchBrandingTheme();
+  assert.deepEqual(theme, saved.json.theme);
+});
+
+test("unsafe theme values are rejected: non-hex colors, non-https logos, bogus enums fall back", async () => {
+  const saved = await request(`/api/orgs/${state.org}/integrations/embed-theme`, {
+    method: "PATCH",
+    cookie: state.owner,
+    body: {
+      theme: {
+        mode: "neon",
+        accentColor: "red; background: url(javascript:alert(1))",
+        backgroundColor: "url(https://evil.example.net/x.png)",
+        radius: "9999px",
+        logoUrl: "javascript:alert(1)",
+      },
+    },
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.json));
+  // Every unsafe value falls back to the default — never stored as-is.
+  assert.deepEqual(saved.json.theme, {
+    mode: "dark",
+    accentColor: null,
+    backgroundColor: null,
+    radius: "lg",
+    logoUrl: null,
+  });
+
+  const theme = await fetchBrandingTheme();
+  assert.deepEqual(theme, saved.json.theme);
+  const asString = JSON.stringify(theme);
+  assert.ok(!asString.includes("javascript:"), "no unsafe scheme may survive");
+  assert.ok(!asString.includes("url("), "no CSS function may survive");
+
+  // http:// (non-https) logos are also refused.
+  const httpLogo = await request(`/api/orgs/${state.org}/integrations/embed-theme`, {
+    method: "PATCH",
+    cookie: state.owner,
+    body: { theme: { logoUrl: "http://insecure.example.com/logo.png" } },
+  });
+  assert.equal(httpLogo.status, 200);
+  assert.equal(httpLogo.json.theme.logoUrl, null);
+});
+
+test("members without manager roles cannot change the org theme", async () => {
+  const anonymous = await request(`/api/orgs/${state.org}/integrations/embed-theme`, {
+    method: "PATCH",
+    body: { theme: { mode: "light" } },
+  });
+  assert.ok([401, 403].includes(anonymous.status), `unauthenticated PATCH must be refused, got ${anonymous.status}`);
+});
+
+test("loader.js whitelists the theme query params for per-mount overrides", async () => {
+  const res = await fetch(`${BASE}/embed/v1/loader.js`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /javascript/);
+  const source = await res.text();
+  for (const param of ["t_mode", "t_accent", "t_bg", "t_radius", "t_logo"]) {
+    assert.ok(source.includes(`&${param}=`), `loader must pass through ${param}`);
+  }
+  // The loader validates values before forwarding them.
+  assert.ok(source.includes("HEX_RE"), "loader must hex-validate colors");
+  assert.match(source, /"none", "sm", "md", "lg", "xl"/, "loader must whitelist radii");
+  assert.ok(/https:/.test(source), "loader must require https logos");
+});
