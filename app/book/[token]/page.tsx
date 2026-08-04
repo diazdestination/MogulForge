@@ -4,6 +4,7 @@ import { verifyBookingToken } from "@/lib/booking-token";
 import { getOrganizationById } from "@/lib/tenant";
 import { getOrgSettings } from "@/lib/org-settings";
 import { PublicBookingForm } from "@/components/public-booking-form";
+import { recordCampaignClick } from "@/lib/rescue-engage/store";
 
 export const metadata: Metadata = { title: "Book an appointment", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -16,6 +17,13 @@ export default async function BookingPage({ params }: { params: Promise<{ token:
   const org = await getOrganizationById(check.claims.org);
   if (!org) notFound();
   const settings = await getOrgSettings(org.id);
+
+  // Record a booking-link click when the token identifies both a campaign and a
+  // lead.  Best-effort: a failure (stale token, deleted campaign/lead) must
+  // never prevent the visitor from reaching the booking form.
+  if (check.claims.cmp && check.claims.lead) {
+    recordCampaignClick(org.id, check.claims.cmp, check.claims.lead).catch(() => undefined);
+  }
 
   return (
     <section className="shell flex min-h-screen items-center justify-center py-16">

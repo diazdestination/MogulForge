@@ -32,7 +32,7 @@ type EnrolledLead = {
 
 type DetailResponse = {
   campaign: Campaign;
-  stats: { enrolled: number; messaged: number; simulatedSends: number; delivered: number; replies: number; optOuts: number; appointments: number; pipelineValue: number };
+  stats: { enrolled: number; messaged: number; simulatedSends: number; delivered: number; replies: number; optOuts: number; appointments: number; pipelineValue: number; linkClicks: number };
   leads: EnrolledLead[];
   provider: { connected: boolean; label: string; detail: string };
   canManage: boolean;
@@ -159,9 +159,9 @@ export function RescueCampaignDetailPanel({ orgId, campaignId }: { orgId: string
           { label: "Delivered (live)", value: stats.delivered },
           { label: "Replies", value: stats.replies },
           { label: "Opt-outs", value: stats.optOuts },
+          { label: "Link clicks", value: stats.linkClicks },
           { label: "Appointments", value: stats.appointments },
           { label: "Pipeline value", value: `$${Math.round(stats.pipelineValue).toLocaleString()}` },
-          { label: "Messaged", value: stats.messaged },
         ].map((card) => (
           <div key={card.label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">{card.label}</p>

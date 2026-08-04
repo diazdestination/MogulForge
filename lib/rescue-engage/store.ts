@@ -47,6 +47,7 @@ export type CampaignStats = {
   optOuts: number;
   appointments: number;
   pipelineValue: number;
+  linkClicks: number;
 };
 
 const CAMPAIGN_COLUMNS = `id, created_by, name, template_key, objective, channel, tone, sender_identity,
@@ -148,6 +149,7 @@ export async function listCampaigns(
   let msgLeadScope = "";
   let apptLeadScope = "";
   let valueLeadScope = "";
+  let clickLeadScope = "";
   if (opts.assignedUserId) {
     params.push(opts.assignedUserId);
     campaignFilter = ` AND EXISTS (SELECT 1 FROM rescue_campaign_leads cl JOIN rescue_leads rl ON rl.id = cl.lead_id
@@ -156,6 +158,7 @@ export async function listCampaigns(
     msgLeadScope = ` AND EXISTS (SELECT 1 FROM rescue_leads rl WHERE rl.id = rescue_messages.lead_id AND rl.assigned_user_id = $2)`;
     apptLeadScope = ` AND EXISTS (SELECT 1 FROM rescue_leads rl WHERE rl.id = rescue_appointments.lead_id AND rl.assigned_user_id = $2)`;
     valueLeadScope = ` AND l.assigned_user_id = $2`;
+    clickLeadScope = ` AND EXISTS (SELECT 1 FROM rescue_leads rl WHERE rl.id = rescue_campaign_clicks.lead_id AND rl.assigned_user_id = $2)`;
   }
   const { rows } = await getPool().query(
     `SELECT ${CAMPAIGN_COLUMNS} FROM rescue_campaigns WHERE organization_id = $1${campaignFilter} ORDER BY created_at DESC LIMIT 200`,
@@ -211,12 +214,21 @@ export async function listCampaigns(
       const s = stats.get(row.campaign_id);
       if (s) s.pipelineValue = Number(row.pipeline_value);
     }
+    const clickRows = await getPool().query(
+      `SELECT campaign_id, count(*)::int AS link_clicks
+       FROM rescue_campaign_clicks WHERE organization_id = $1${clickLeadScope} GROUP BY campaign_id`,
+      params,
+    );
+    for (const row of clickRows.rows) {
+      const s = stats.get(row.campaign_id);
+      if (s) s.linkClicks = row.link_clicks;
+    }
   }
   return campaigns.map((c) => ({ ...c, stats: stats.get(c.id) ?? emptyStats() }));
 }
 
 function emptyStats(): CampaignStats {
-  return { enrolled: 0, messaged: 0, simulatedSends: 0, liveSends: 0, delivered: 0, replies: 0, optOuts: 0, appointments: 0, pipelineValue: 0 };
+  return { enrolled: 0, messaged: 0, simulatedSends: 0, liveSends: 0, delivered: 0, replies: 0, optOuts: 0, appointments: 0, pipelineValue: 0, linkClicks: 0 };
 }
 
 export async function getCampaignStats(
@@ -1105,6 +1117,28 @@ export async function findLeadIdByEmail(organizationId: string, email: string): 
     [organizationId, email],
   );
   return rows[0]?.id ?? null;
+}
+
+/**
+ * Records a booking-link click for a campaign lead (deduped: first visit wins).
+ * Only called when the token carries both a campaign claim and a lead claim.
+ * Concurrent page loads are safe — the primary key constraint silently ignores
+ * duplicate inserts.
+ */
+export async function recordCampaignClick(organizationId: string, campaignId: string, leadId: string): Promise<void> {
+  // Insert only when both the campaign and the lead actually exist and belong
+  // to the same org — the SELECT guards against stale tokens referencing
+  // deleted rows, eliminating any FK violation risk.  ON CONFLICT deduplicates
+  // repeat visits from the same lead.
+  await getPool().query(
+    `INSERT INTO rescue_campaign_clicks (organization_id, campaign_id, lead_id)
+     SELECT $1, c.id, l.id
+     FROM rescue_campaigns c
+     JOIN rescue_leads l ON l.organization_id = c.organization_id
+     WHERE c.organization_id = $1 AND c.id = $2 AND l.id = $3
+     ON CONFLICT (campaign_id, lead_id) DO NOTHING`,
+    [organizationId, campaignId, leadId],
+  );
 }
 
 /** True when an external event id is already tracked for the org (dedupe for inbound sync). */
