@@ -25,6 +25,12 @@ export type DomainProbeOutcome = {
   message: string;
 } | null;
 
+export type OrgDomainRecoveryAlert = {
+  organizationId: string;
+  organizationName: string;
+  domain: string;
+};
+
 export type DomainHealthDeps = {
   /** Verified/active domains due for a re-check (throttled by last_checked_at). */
   listMonitoredDomains: () => Promise<MonitoredDomain[]>;
@@ -37,6 +43,11 @@ export type DomainHealthDeps = {
    * Returns true when an email was actually sent. Should throw on failure.
    */
   notifyOrg: (alert: OrgDomainRegressionAlert) => Promise<boolean>;
+  /**
+   * Notifies the org when a previously-failing domain passes its DNS check.
+   * Returns true when an email was actually sent. Should throw on failure.
+   */
+  notifyOrgRecovery: (alert: OrgDomainRecoveryAlert) => Promise<boolean>;
 };
 
 export type OrgDomainRegressionAlert = {
@@ -58,8 +69,12 @@ export type DomainHealthPassResult = {
   /** Active domains that flipped healthy → failing during this pass. */
   regressions: number;
   alertsSent: number;
-  /** Emails delivered to the owning org's notification recipients. */
+  /** Emails delivered to the owning org's notification recipients (regression). */
   orgAlertsSent: number;
+  /** Active domains that flipped failing → healthy during this pass. */
+  recoveries: number;
+  /** Recovery emails delivered to the owning org's notification recipients. */
+  orgRecoveryAlertsSent: number;
 };
 
 /** Re-check every monitored domain no more often than this. */
@@ -76,7 +91,15 @@ export function buildDomainRegressionEmail(alert: DomainRegressionAlert): { subj
 
 export async function runDomainHealthPass(deps: DomainHealthDeps): Promise<DomainHealthPassResult> {
   const domains = await deps.listMonitoredDomains();
-  const result: DomainHealthPassResult = { checked: 0, failing: 0, regressions: 0, alertsSent: 0, orgAlertsSent: 0 };
+  const result: DomainHealthPassResult = {
+    checked: 0,
+    failing: 0,
+    regressions: 0,
+    alertsSent: 0,
+    orgAlertsSent: 0,
+    recoveries: 0,
+    orgRecoveryAlertsSent: 0,
+  };
 
   for (const domain of domains) {
     let outcome: DomainProbeOutcome;
@@ -89,7 +112,25 @@ export async function runDomainHealthPass(deps: DomainHealthDeps): Promise<Domai
     }
     if (!outcome) continue; // domain removed between listing and check
     result.checked++;
-    if (outcome.ok) continue;
+
+    if (outcome.ok) {
+      // Alert on the failing → healthy transition for active domains.
+      const wasFailing = domain.lastCheckError !== null;
+      if (wasFailing && domain.status === "active") {
+        result.recoveries++;
+        try {
+          const sent = await deps.notifyOrgRecovery({
+            organizationId: domain.organizationId,
+            organizationName: domain.organizationName,
+            domain: domain.domain,
+          });
+          if (sent) result.orgRecoveryAlertsSent++;
+        } catch (error) {
+          console.error(`Org domain recovery alert failed for ${domain.domain}`, error);
+        }
+      }
+      continue;
+    }
     result.failing++;
 
     // Alert only on the healthy→failing transition for live (active) domains.

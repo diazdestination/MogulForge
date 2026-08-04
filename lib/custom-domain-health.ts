@@ -76,5 +76,20 @@ export async function runCustomDomainHealthPass(): Promise<DomainHealthPassResul
       );
       return result.status === "sent";
     },
+    notifyOrgRecovery: async (alert) => {
+      const { sendOrgAlert } = await import("./org-alerts");
+      const { buildCustomDomainRecoveredEmail } = await import("./org-alerts-content.ts");
+      const { SITE_URL } = await import("./site");
+      const result = await sendOrgAlert(
+        alert.organizationId,
+        "customDomainAlerts",
+        buildCustomDomainRecoveredEmail({
+          orgName: alert.organizationName,
+          domain: alert.domain,
+          brandingUrl: `${SITE_URL}/dashboard/revenue-rescue/branding`,
+        }),
+      );
+      return result.status === "sent";
+    },
   });
 }

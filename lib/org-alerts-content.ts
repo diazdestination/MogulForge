@@ -249,6 +249,27 @@ export function buildCustomDomainErrorEmail(input: {
   };
 }
 
+export function buildCustomDomainRecoveredEmail(input: {
+  orgName: string;
+  domain: string;
+  brandingUrl: string;
+}): AlertEmail {
+  return {
+    subject: `Your custom domain ${input.domain} is working again`,
+    html: wrap(
+      `✅ Custom domain restored — ${input.domain}`,
+      `<p style="margin-top:0;color:#374151;">Good news — your custom domain <strong>${escapeHtml(input.domain)}</strong> just passed its scheduled DNS check and is resolving correctly again. Visitors can reach your branded portal normally.</p>
+       ${detailRows([
+         ["Domain", input.domain],
+         ["Status", "Healthy — DNS resolving correctly"],
+       ])}
+       <p style="margin-top:16px;"><a href="${escapeHtml(input.brandingUrl)}" style="background:#111827;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px;">View Branding settings</a></p>
+       <p style="color:#374151;font-size:13px;">No action is needed. If the domain stops resolving again you'll receive another alert.</p>`,
+      `Sent by ${input.orgName} alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export type OrgDigestStats = {
   newLeads: number;
   repliesReceived: number;
