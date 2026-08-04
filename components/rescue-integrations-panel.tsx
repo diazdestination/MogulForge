@@ -353,6 +353,7 @@ function EmbedThemeEditor({ orgId }: { orgId: string }) {
   const [status, setStatus] = useState<"loading" | "ready" | "saving">("loading");
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState(0);
+  const [previewModule, setPreviewModule] = useState<"widget" | "dashboard">("widget");
 
   useEffect(() => {
     let cancelled = false;
@@ -489,24 +490,84 @@ function EmbedThemeEditor({ orgId }: { orgId: string }) {
         </div>
 
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-white/40">Live preview — lead widget</p>
-          <div className="mt-2 overflow-hidden rounded-xl border border-white/10">
-            <div className="space-y-3 p-5" style={preview.root}>
-              <div className="flex items-center gap-2.5">
-                {theme.logoUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element -- client-provided preview logo
-                  <img src={theme.logoUrl} alt="" className="h-6 w-auto" />
-                )}
-                <p className="text-sm font-bold">Request a free estimate</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>First name</span></div>
-                <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>Last name</span></div>
-              </div>
-              <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>Email</span></div>
-              <div className="w-full px-4 py-2.5 text-center text-sm font-bold" style={preview.accentSolid}>Get my estimate</div>
-              <p className="text-center text-[10px] uppercase tracking-wider" style={preview.faint}>Powered by MogulForge Revenue Rescue</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-white/40">
+              Live preview — {previewModule === "widget" ? "lead widget" : "dashboard"}
+            </p>
+            <div className="flex gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
+              {(["widget", "dashboard"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setPreviewModule(m)}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide transition ${
+                    previewModule === m ? "bg-forge-lime text-black" : "text-white/55 hover:text-white"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
             </div>
+          </div>
+          <div className="mt-2 overflow-hidden rounded-xl border border-white/10">
+            {previewModule === "widget" ? (
+              <div className="space-y-3 p-5" style={preview.root}>
+                <div className="flex items-center gap-2.5">
+                  {theme.logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element -- client-provided preview logo
+                    <img src={theme.logoUrl} alt="" className="h-6 w-auto" />
+                  )}
+                  <p className="text-sm font-bold">Request a free estimate</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>First name</span></div>
+                  <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>Last name</span></div>
+                </div>
+                <div className="px-3 py-2 text-sm" style={preview.input}><span style={preview.faint}>Email</span></div>
+                <div className="w-full px-4 py-2.5 text-center text-sm font-bold" style={preview.accentSolid}>Get my estimate</div>
+                <p className="text-center text-[10px] uppercase tracking-wider" style={preview.faint}>Powered by MogulForge Revenue Rescue</p>
+              </div>
+            ) : (
+              <div className="space-y-3 p-5" style={preview.root}>
+                <div className="flex items-center gap-2.5">
+                  {theme.logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element -- client-provided preview logo
+                    <img src={theme.logoUrl} alt="" className="h-6 w-auto" />
+                  )}
+                  <p className="text-sm font-bold">Revenue dashboard</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Leads", value: "128" },
+                    { label: "Booked", value: "42" },
+                    { label: "Revenue", value: "$18.4k" },
+                  ].map((m) => (
+                    <div key={m.label} className="p-3" style={preview.card}>
+                      <p className="text-[10px] uppercase tracking-wider" style={preview.faint}>{m.label}</p>
+                      <p className="mt-1 text-lg font-bold" style={preview.heading}>{m.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-3" style={preview.card}>
+                  <p className="text-[10px] uppercase tracking-wider" style={preview.faint}>Lead funnel</p>
+                  <div className="mt-2 space-y-2">
+                    {[
+                      { label: "New", pct: 100 },
+                      { label: "Contacted", pct: 64 },
+                      { label: "Booked", pct: 33 },
+                    ].map((row) => (
+                      <div key={row.label} className="flex items-center gap-2">
+                        <span className="w-20 text-xs" style={preview.muted}>{row.label}</span>
+                        <div className="h-2.5 flex-1 overflow-hidden" style={preview.accentSoft}>
+                          <div className="h-full" style={{ ...preview.accentSolid, width: `${row.pct}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-center text-[10px] uppercase tracking-wider" style={preview.faint}>Powered by MogulForge Revenue Rescue</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
