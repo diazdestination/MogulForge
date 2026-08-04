@@ -6,7 +6,11 @@ import { analyzeDeterministic, type DeterministicAnalysis } from "./signals.ts";
 import { AI_ANALYSIS_JSON_SPEC, parseAiAnalysis, type AiAnalysis } from "./ai-schema.ts";
 import { mergeAnalysis } from "./merge.ts";
 import { buildLeadFactSheet } from "./message-content.ts";
+import { getPool } from "../db";
+import { buildAnalysisHotLeadsEmail } from "../org-alerts-content.ts";
+import { sendOrgAlertInBackground } from "../org-alerts.ts";
 import {
+  countHotLeadsAmong,
   deleteAnalysisRun,
   getActiveRun,
   getOrgServiceArea,
@@ -153,6 +157,28 @@ async function processRun(run: AnalysisRun, leads: LeadForAnalysis[], actorLabel
       targetId: run.id,
       metadata: { status, totalCount: run.totalCount, analyzedCount: analyzed, aiCount, failedCount: failed },
     });
+    // One summary alert per completed run (never per lead) when analysis
+    // surfaced hot opportunities. Toggle + recipients are enforced inside
+    // sendOrgAlert; any failure here must never affect the run outcome, so
+    // the whole branch is isolated in its own try/catch.
+    if (analyzed > 0) {
+      try {
+        const hotCount = await countHotLeadsAmong(organizationId, leads.map((lead) => lead.id));
+        if (hotCount > 0) {
+          const orgName: string = await getPool()
+            .query("SELECT name FROM organizations WHERE id = $1", [organizationId])
+            .then((r) => r.rows[0]?.name ?? "Your organization")
+            .catch(() => "Your organization");
+          sendOrgAlertInBackground(
+            organizationId,
+            "hotLeadAlerts",
+            buildAnalysisHotLeadsEmail({ orgName, hotCount, analyzedCount: analyzed }),
+          );
+        }
+      } catch (alertError) {
+        console.error(`Analysis hot-lead summary alert failed for organization ${organizationId}`, alertError);
+      }
+    }
   } catch (error) {
     console.error("Analysis run failed", run.id, error);
     await updateRunProgress(organizationId, run.id, {

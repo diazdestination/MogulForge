@@ -274,6 +274,17 @@ export async function markLeadAnalysisFailed(organizationId: string, leadId: str
   );
 }
 
+/** How many of the given leads ended up classified as hot_opportunity. */
+export async function countHotLeadsAmong(organizationId: string, leadIds: string[]): Promise<number> {
+  if (leadIds.length === 0) return 0;
+  const { rows } = await getPool().query(
+    `SELECT count(*)::int AS n FROM rescue_leads
+     WHERE organization_id = $1 AND id = ANY($2) AND category = 'hot_opportunity'`,
+    [organizationId, leadIds],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 /** Most recent stated service area from the org's intake submissions (if any). */
 export async function getOrgServiceArea(organizationId: string): Promise<string | null> {
   const { rows } = await getPool().query(

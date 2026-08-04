@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildAnalysisHotLeadsEmail,
   buildAppointmentAlertEmail,
   buildHotLeadAlertEmail,
   buildOrgDigestEmail,
@@ -25,6 +26,17 @@ test("hot lead alert escapes lead-controlled reply text", () => {
   assert.ok(!email.html.includes("<script>"));
   assert.ok(email.html.includes("&lt;b&gt;call me&lt;/b&gt;"));
   assert.ok(email.html.includes("SMS"));
+});
+
+test("analysis hot-leads summary email pluralizes and escapes org name", () => {
+  const many = buildAnalysisHotLeadsEmail({ orgName: "Acme <Roofing>", hotCount: 12, analyzedCount: 200 });
+  assert.equal(many.subject, "Analysis found 12 hot opportunities");
+  assert.ok(many.html.includes("12 of 200 analyzed leads"));
+  assert.ok(!many.html.includes("<Roofing>"));
+
+  const one = buildAnalysisHotLeadsEmail({ orgName: "Acme", hotCount: 1, analyzedCount: 1 });
+  assert.equal(one.subject, "Analysis found 1 hot opportunity");
+  assert.ok(one.html.includes("1 of 1 analyzed lead as hot opportunity"));
 });
 
 test("reply alert includes category and channel", () => {

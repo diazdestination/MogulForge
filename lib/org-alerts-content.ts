@@ -109,6 +109,22 @@ export function buildAppointmentAlertEmail(input: {
   };
 }
 
+export function buildAnalysisHotLeadsEmail(input: {
+  orgName: string;
+  hotCount: number;
+  analyzedCount: number;
+}): AlertEmail {
+  const plural = input.hotCount === 1 ? "hot opportunity" : "hot opportunities";
+  return {
+    subject: `Analysis found ${input.hotCount} ${plural}`,
+    html: wrap(
+      `🔥 ${input.hotCount} ${plural} found`,
+      `<p style="margin-top:0;color:#374151;">A lead analysis run just finished and classified ${input.hotCount} of ${input.analyzedCount} analyzed lead${input.analyzedCount === 1 ? "" : "s"} as hot ${input.hotCount === 1 ? "opportunity" : "opportunities"}. Review them in your leads dashboard and reach out while they're warm.</p>`,
+      `Sent by ${input.orgName} lead alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export type OrgDigestStats = {
   newLeads: number;
   repliesReceived: number;
