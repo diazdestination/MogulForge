@@ -1,21 +1,29 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import type { VisibilityInput, VisibilityReport } from "@/lib/visibility-schema";
+import { createSubmitTimer } from "@/lib/bot-trap";
 import { VisibilityReportView } from "@/components/visibility-report";
 
+// `website` is a honeypot field hidden from humans; bots that auto-fill every
+// input reveal themselves by populating it.
+type VisibilityFormValues = VisibilityInput & { website?: string };
+
 export function VisibilityForm() {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<VisibilityInput>();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<VisibilityFormValues>();
   const [result, setResult] = useState<VisibilityReport | null>(null);
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [timer] = useState(createSubmitTimer);
+  useEffect(() => { timer.start(); }, [timer]);
 
-  const submit = async (data: VisibilityInput) => {
+  const submit = async (data: VisibilityFormValues) => {
     setError("");
-    const res = await fetch("/api/ai-visibility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    const res = await fetch("/api/ai-visibility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, elapsedMs: timer.elapsedMs() }) });
     const body = await res.json().catch(() => null);
     if (!res.ok) { setError(body?.error ?? "Unable to run the scan."); return; }
+    if (!body?.result) { setError("Unable to run the scan. Please try again."); return; }
     setResult(body.result);
     setReportId(body.reportId ?? null);
   };
@@ -44,6 +52,12 @@ export function VisibilityForm() {
   </div>;
 
   return <form onSubmit={handleSubmit(submit)} className="grid gap-5 rounded-[2rem] border border-white/10 bg-white/[.03] p-6 sm:p-10">
+    {/* Honeypot: invisible to humans (off-screen, untabbable), so anything typed here means a bot. */}
+    <div aria-hidden="true" className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden">
+      <label>Leave this field empty
+        <input {...register("website")} type="text" tabIndex={-1} autoComplete="off" />
+      </label>
+    </div>
     <label className="grid gap-2 text-sm font-bold">Website address
       <input {...register("url", { required: true })} type="text" inputMode="url" placeholder="example.com" className="rounded-xl border border-white/15 bg-transparent px-4 py-3 outline-none focus:border-forge-lime" />
       {errors.url && <span className="text-xs text-forge-rust">Enter your website address.</span>}

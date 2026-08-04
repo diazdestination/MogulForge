@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOpenAIClient } from "@/lib/openai";
-import { visibilityInputSchema, type VisibilityReport } from "@/lib/visibility-schema";
+import { isBotSubmission, visibilityInputSchema, type VisibilityReport } from "@/lib/visibility-schema";
 import { crawlSite } from "@/lib/visibility-crawler";
 import { scoreCategories, overallScore, fallbackReport } from "@/lib/visibility-score";
 import { getPool } from "@/lib/db";
@@ -33,6 +33,13 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
+
+  // Honeypot + time-to-submit bot trap: fail silently with a fake success so
+  // automated form-fillers think they succeeded, at zero crawl/AI cost.
+  if (isBotSubmission(body)) {
+    return NextResponse.json({ result: null, reportId: null, mode: "queued" });
+  }
+
   const parsed = visibilityInputSchema.safeParse(body);
   if (!parsed.success) {
     const firstIssue = Object.values(parsed.error.flatten().fieldErrors).flat().find(Boolean);
