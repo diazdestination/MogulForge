@@ -11,15 +11,26 @@ import { isPlatformHost, normalizeHostHeader, platformHostsFromEnv } from "./lib
  *    custom_domains (DB lookup lives there, not here) and either serves the
  *    owning org's branded portal or an honest "not connected" page.
  */
+/** Paths that are allowed to serve on a custom-domain (portal) host. */
+const PORTAL_PATH_PREFIXES = ["/login", "/dashboard", "/account", "/portal", "/invite", "/embed", "/api"];
+
+function isPortalPath(pathname: string): boolean {
+  return PORTAL_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 export default function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
-  if (pathname === "/") {
+  if (!pathname.startsWith("/embed")) {
     const host = normalizeHostHeader(request.headers.get("x-forwarded-host") ?? request.headers.get("host"));
     if (host && !isPlatformHost(host, platformHostsFromEnv(process.env))) {
-      return NextResponse.rewrite(new URL("/portal", request.url));
+      // Custom-domain hosts never serve MogulForge marketing routes:
+      // "/" is rewritten to the portal resolver, everything outside the
+      // portal surface redirects there.
+      if (pathname === "/") return NextResponse.rewrite(new URL("/portal", request.url));
+      if (!isPortalPath(pathname)) return NextResponse.redirect(new URL("/", request.url));
     }
-    return NextResponse.next();
+    if (pathname === "/") return NextResponse.next();
   }
 
   const response = NextResponse.next();
@@ -33,4 +44,7 @@ export default function proxy(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: ["/embed/:path*", "/"] };
+// Match embeds (CSP), plus every page path (custom-domain routing). Static
+// assets (_next, files with extensions) and API routes are excluded from the
+// page matcher — APIs stay reachable on any host.
+export const config = { matcher: ["/embed/:path*", "/((?!_next/|api/|embed/|.*\\..*).*)"] };

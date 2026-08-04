@@ -167,6 +167,20 @@ test("dashboard on a portal domain is pinned to the owning org", async () => {
   assert.match(outsider.body, /No workspace yet/);
 });
 
+test("portal domain hides MogulForge chrome and marketing routes", async () => {
+  const login = await hostGet("/login", DOMAIN);
+  assert.equal(login.status, 200);
+  assert.doesNotMatch(login.body, /Run the scan/); // marketing header CTA
+  assert.doesNotMatch(login.body, /MOGULFORGE/); // wordmark in header/footer
+  assert.match(login.body, /Powered by MogulForge/); // slim footer powered-by line
+
+  for (const path of ["/services", "/revenue-rescue", "/signup"]) {
+    const res = await hostGet(path, DOMAIN);
+    assert.ok([302, 307, 308].includes(res.status), `${path}: expected redirect, got ${res.status}`);
+    assert.ok(res.location?.endsWith("/"), `${path}: redirects to /, got ${res.location}`);
+  }
+});
+
 test("platform host is unaffected (marketing home still renders on '/')", async () => {
   const res = await hostGet("/", `127.0.0.1:${BASE.port || 80}`);
   assert.equal(res.status, 200);

@@ -3,12 +3,14 @@ import { Cormorant_Garamond, Manrope } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
+import { PortalFooter, PortalHeader } from "@/components/portal-chrome";
+import { getPortalHostContext } from "@/lib/portal-host";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 const display = Cormorant_Garamond({ subsets: ["latin"], variable: "--font-display", weight: ["500", "600", "700"] });
 
-export const metadata: Metadata = {
+const platformMetadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: `${SITE_NAME} | ${SITE_TAGLINE}`, template: `%s | ${SITE_NAME}` },
   description: SITE_DESCRIPTION,
@@ -46,8 +48,35 @@ const webSiteJsonLd = {
   url: SITE_URL,
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body className={`${manrope.variable} ${display.variable} font-sans antialiased`}>
+export async function generateMetadata(): Promise<Metadata> {
+  const context = await getPortalHostContext();
+  if (context.kind === "portal") {
+    const { branding } = context;
+    return {
+      title: { default: branding.portalTitle, template: `%s | ${branding.displayName}` },
+      description: `${branding.displayName} client portal`,
+      robots: { index: false, follow: false },
+    };
+  }
+  if (context.kind === "unknown_domain") {
+    return { title: "Client portal", robots: { index: false, follow: false } };
+  }
+  return platformMetadata;
+}
+
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const context = await getPortalHostContext();
+  const bodyClass = `${manrope.variable} ${display.variable} font-sans antialiased`;
+
+  // Custom-domain hosts get the org's minimal branded chrome — no MogulForge
+  // marketing navigation, footer links, or JSON-LD. Platform hosts unchanged.
+  if (context.kind !== "platform") {
+    const branding = context.kind === "portal" ? context.branding : null;
+    return <html lang="en"><body className={bodyClass}>
+      <PortalHeader branding={branding} /><main>{children}</main><PortalFooter branding={branding} /></body></html>;
+  }
+
+  return <html lang="en"><body className={bodyClass}>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }} />
     <Header /><main>{children}</main><Footer /></body></html>;
