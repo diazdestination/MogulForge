@@ -5,7 +5,7 @@ import { getCrmProvider, pushLeadForProvider } from "./adapters";
 import { getCrmConnection } from "./store";
 import { sendOrgAlertInBackground } from "../org-alerts";
 import { buildCrmConnectionErrorEmail, buildCrmConnectionRecoveredEmail } from "../org-alerts-content.ts";
-import { SITE_URL } from "../site";
+import { getOrgPortalBaseUrl } from "../custom-domains";
 
 /**
  * Per-connection CRM push delivery log (mirrors the outgoing-webhook deliveries
@@ -187,6 +187,7 @@ async function notifyConnectionErrored(
     ]);
     const orgName = orgRows.rows[0]?.name ? String(orgRows.rows[0].name) : "Your organization";
     const providerLabel = getCrmProvider(provider)?.label ?? provider;
+    const portalBaseUrl = await getOrgPortalBaseUrl(organizationId);
     sendOrgAlertInBackground(
       organizationId,
       "crmConnectionAlerts",
@@ -196,7 +197,7 @@ async function notifyConnectionErrored(
         providerLabel,
         consecutiveFailures,
         lastError,
-        integrationsUrl: `${SITE_URL}/dashboard/revenue-rescue/integrations`,
+        integrationsUrl: `${portalBaseUrl}/dashboard/revenue-rescue/integrations`,
       }),
     );
   } catch (error) {
@@ -219,6 +220,7 @@ async function notifyConnectionRecovered(organizationId: string, connectionId: s
     ]);
     const orgName = orgRows.rows[0]?.name ? String(orgRows.rows[0].name) : "Your organization";
     const providerLabel = getCrmProvider(provider)?.label ?? provider;
+    const portalBaseUrl = await getOrgPortalBaseUrl(organizationId);
     sendOrgAlertInBackground(
       organizationId,
       "crmConnectionAlerts",
@@ -226,7 +228,7 @@ async function notifyConnectionRecovered(organizationId: string, connectionId: s
         orgName,
         connectionName: connection?.name ?? providerLabel,
         providerLabel,
-        integrationsUrl: `${SITE_URL}/dashboard/revenue-rescue/integrations`,
+        integrationsUrl: `${portalBaseUrl}/dashboard/revenue-rescue/integrations`,
       }),
     );
   } catch (error) {
