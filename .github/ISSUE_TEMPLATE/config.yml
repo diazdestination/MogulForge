@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: mailto:security@mogulforge.com
+    about: Please report security vulnerabilities privately by email, not as a GitHub issue.
+  - name: ROADMAP
+    url: https://github.com/diazdestination/MogulForge/blob/main/ROADMAP.md
+    about: Check the roadmap before requesting a feature that may already be planned.
