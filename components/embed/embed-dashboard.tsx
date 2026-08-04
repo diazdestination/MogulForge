@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { DEFAULT_EMBED_STYLES, embedStyles, parseEmbedBranding, resolveEmbedTheme, themeLogoUrl, type EmbedBranding } from "./embed-branding";
+import { embedStyles, parseEmbedBranding, resolveEmbedTheme, themeLogoUrl, type EmbedBranding } from "./embed-branding";
 
 type Metrics = {
   cards: Record<string, number>;
@@ -24,7 +24,7 @@ export function EmbedDashboard() {
   const [error, setError] = useState("");
 
   const theme = useMemo(() => resolveEmbedTheme(branding, searchParams), [branding, searchParams]);
-  const s = useMemo(() => (branding ? embedStyles(theme, branding) : DEFAULT_EMBED_STYLES), [branding, theme]);
+  const s = useMemo(() => embedStyles(theme, branding), [branding, theme]);
   const logo = themeLogoUrl(theme, branding);
 
   const load = useCallback(async () => {

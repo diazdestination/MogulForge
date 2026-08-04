@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { DEFAULT_EMBED_STYLES, embedStyles, parseEmbedBranding, resolveEmbedTheme, themeLogoUrl, type EmbedBranding } from "./embed-branding";
+import { embedStyles, parseEmbedBranding, resolveEmbedTheme, themeLogoUrl, type EmbedBranding } from "./embed-branding";
 
 const inputClass = "w-full px-3 py-2 text-sm placeholder:opacity-40";
 
@@ -15,7 +15,7 @@ export function EmbedLeadWidget() {
   const [error, setError] = useState(token ? "" : "Missing embed token. This widget must be loaded through the Revenue Rescue embed loader.");
 
   const theme = useMemo(() => resolveEmbedTheme(branding, searchParams), [branding, searchParams]);
-  const s = useMemo(() => (branding ? embedStyles(theme, branding) : DEFAULT_EMBED_STYLES), [branding, theme]);
+  const s = useMemo(() => embedStyles(theme, branding), [branding, theme]);
   const logo = themeLogoUrl(theme, branding);
 
   useEffect(() => {

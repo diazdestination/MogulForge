@@ -183,6 +183,61 @@ test("members without manager roles cannot change the org theme", async () => {
   assert.ok([401, 403].includes(anonymous.status), `unauthenticated PATCH must be refused, got ${anonymous.status}`);
 });
 
+async function fetchEmbedHtml(path, params) {
+  const token = await mintEmbedToken();
+  const qs = new URLSearchParams({ token, ...params });
+  const res = await fetch(`${BASE}${path}?${qs}`, { redirect: "manual" });
+  assert.equal(res.status, 200, `${path} must render, got ${res.status}`);
+  assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+  return res.text();
+}
+
+test("rendered /embed/widget applies valid per-mount theme overrides as inline styles", async () => {
+  const html = await fetchEmbedHtml("/embed/widget", {
+    t_mode: "light",
+    t_accent: "#ff0055",
+    t_bg: "#112233",
+    t_radius: "xl",
+  });
+  // Root background from t_bg, served in the initial HTML (not just after hydration).
+  assert.ok(html.includes("background-color:#112233"), "widget HTML must inline the t_bg override");
+  // Accent from t_accent on the solid accent (submit button).
+  assert.ok(html.includes("background-color:#ff0055"), "widget HTML must inline the t_accent override");
+  // xl radius → 12px controls (inputs/buttons).
+  assert.ok(html.includes("border-radius:12px"), "widget HTML must inline the xl control radius");
+  // t_mode=light → light text color, not the dark-mode default.
+  assert.ok(html.includes("color:#111418"), "widget HTML must use the light-mode text color");
+  assert.ok(!html.includes("background-color:#0b0e11"), "dark default background must be overridden");
+});
+
+test("rendered /embed/dashboard applies valid per-mount theme overrides as inline styles", async () => {
+  const html = await fetchEmbedHtml("/embed/dashboard", {
+    t_bg: "#221100",
+    t_accent: "#00ccaa",
+  });
+  assert.ok(html.includes("background-color:#221100"), "dashboard HTML must inline the t_bg override");
+});
+
+test("rendered /embed/widget ignores invalid per-mount theme params", async () => {
+  const html = await fetchEmbedHtml("/embed/widget", {
+    t_mode: "neon",
+    t_accent: "red; background: url(javascript:alert(1))",
+    t_bg: "url(https://evil.example.net/x.png)",
+    t_radius: "9999px",
+    t_logo: "javascript:alert(1)",
+  });
+  // None of the hostile values may survive into rendered inline styles.
+  // (The raw query string is echoed inside Next's serialized payload, so we
+  // check the style contexts specifically.)
+  assert.ok(!html.includes("background-color:url("), "bogus t_bg must never reach a style");
+  assert.ok(!html.includes("background-color:red"), "non-hex t_accent must never reach a style");
+  assert.ok(!html.includes("border-radius:9999px"), "bogus radius must never reach a style");
+  assert.ok(!/<img[^>]+javascript:/i.test(html), "unsafe logo scheme must never render as an image");
+  // The page falls back to the dark defaults: dark background + lg control radius (8px).
+  assert.ok(html.includes("background-color:#0b0e11"), "invalid t_bg falls back to the dark default background");
+  assert.ok(html.includes("border-radius:8px"), "invalid t_radius falls back to the lg control radius");
+});
+
 test("loader.js whitelists the theme query params for per-mount overrides", async () => {
   const res = await fetch(`${BASE}/embed/v1/loader.js`);
   assert.equal(res.status, 200);

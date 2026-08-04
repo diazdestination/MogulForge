@@ -14,5 +14,6 @@
 - [Per-org calendar OAuth](per-org-calendar-oauth.md) — org's own OAuth connection always wins over the workspace connector; a broken org connection must never fall back (cross-tenant calendar leak).
 - [Calendar connectors](calendar-connectors.md) — workspace-level Replit connectors are the LEGACY FALLBACK only; per-org OAuth (see per-org-calendar-oauth) wins when present; connector state resolved live, fail-closed.
 - [OG image rendering pitfalls](og-image-satori.md) — inline remote logos as data URLs with explicit dims or Satori 500s; portal proxy allow-list must include /opengraph-image.
+- [Embed SSR theme testing](embed-ssr-theme-testing.md) — embed pages must style from the merged theme pre-branding; flight payload echoes raw query params, assert style contexts only.
 - [Test suite serialization](test-suite-serialization.md) — never run `npm test` (all files parallel) against next dev; provisioning stampedes hang the server. Run test files one at a time.
 - [CRM pull semantics](crm-pull-semantics.md) — inbound CRM pull only updates EXISTING leads; unmatched contacts are never created. UI must not promise "import via CRM".
