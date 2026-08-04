@@ -306,17 +306,37 @@ export const SCHEDULED_PULL_AUTO_ERROR_FAILURES = 8;
  * Per-connection failures are audited and never abort the pass.
  */
 export async function runScheduledCrmPulls(limit = 10): Promise<{ pulled: number; failed: number }> {
+  // Atomically claim connections that are due for a pull. The inner SELECT uses
+  // FOR UPDATE SKIP LOCKED so two concurrent server instances can never claim
+  // the same row in the same pass. The outer UPDATE immediately stamps
+  // lastPull.at = now(), so any server that starts a new pass after this one
+  // commits will see these rows as "recently pulled" and skip them for the full
+  // interval — even if the actual pull has not finished yet. The real pull
+  // result (pullCrmUpdates on success, recordPullFailure on failure) always
+  // overwrites lastPull fully, so the claim stamp is never the final value.
   const { rows } = await getPool().query(
-    `SELECT id, organization_id FROM crm_connections
-     WHERE status = 'active'
-       AND sync_direction IN ('inbound', 'bidirectional')
-       AND provider IN ('hubspot', 'gohighlevel')
-       AND (
-         last_test_result->'lastPull'->>'at' IS NULL
-         OR (last_test_result->'lastPull'->>'at')::timestamptz <= now() - ($1 || ' minutes')::interval
-       )
-     ORDER BY last_test_result->'lastPull'->>'at' ASC NULLS FIRST
-     LIMIT $2`,
+    `WITH claimed AS (
+       SELECT id FROM crm_connections
+       WHERE status = 'active'
+         AND sync_direction IN ('inbound', 'bidirectional')
+         AND provider IN ('hubspot', 'gohighlevel')
+         AND (
+           last_test_result->'lastPull'->>'at' IS NULL
+           OR (last_test_result->'lastPull'->>'at')::timestamptz <= now() - ($1 || ' minutes')::interval
+         )
+       ORDER BY last_test_result->'lastPull'->>'at' ASC NULLS FIRST
+       LIMIT $2
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE crm_connections SET
+       last_test_result = COALESCE(last_test_result, '{}'::jsonb) ||
+         jsonb_build_object(
+           'lastPull',
+           COALESCE(last_test_result->'lastPull', '{}'::jsonb) ||
+           jsonb_build_object('at', to_json(now())#>>'{}')
+         )
+     WHERE id IN (SELECT id FROM claimed)
+     RETURNING id, organization_id`,
     [String(SCHEDULED_PULL_INTERVAL_MINUTES), limit],
   );
 
