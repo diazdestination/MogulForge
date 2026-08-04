@@ -172,7 +172,8 @@ export async function schedulePendingPlanChange(organizationId: string, planId: 
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions
      SET pending_plan_id = $2, pending_plan_effective_at = $3, pending_plan_reminder_sent_at = NULL,
-         pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL, updated_at = now()
+         pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL,
+         pending_plan_last_failed_at = NULL, updated_at = now()
      WHERE organization_id = $1
      RETURNING *`,
     [organizationId, planId, effectiveAt.toISOString()],
@@ -186,7 +187,8 @@ export async function clearPendingPlanChange(organizationId: string): Promise<Or
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions
      SET pending_plan_id = NULL, pending_plan_effective_at = NULL, pending_plan_reminder_sent_at = NULL,
-         pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL, updated_at = now()
+         pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL,
+         pending_plan_last_failed_at = NULL, updated_at = now()
      WHERE organization_id = $1 AND pending_plan_id IS NOT NULL
      RETURNING *`,
     [organizationId],
@@ -214,6 +216,12 @@ export async function applyDuePendingPlanChanges(now: Date = new Date(), organiz
     `SELECT organization_id
      FROM org_subscriptions
      WHERE pending_plan_id IS NOT NULL AND pending_plan_effective_at <= $1
+       AND (
+         pending_plan_last_failed_at IS NULL
+         OR pending_plan_last_failed_at
+              + (INTERVAL '1 minute' * LEAST(POWER(2, pending_plan_failed_attempts)::bigint, 240))
+              <= $1
+       )
        ${organizationId ? "AND organization_id = $2" : ""}`,
     params,
   );
@@ -285,6 +293,7 @@ export async function applyDuePendingPlanChanges(now: Date = new Date(), organiz
          SET plan_id = pending_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL,
              pending_plan_reminder_sent_at = NULL,
              pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL,
+             pending_plan_last_failed_at = NULL,
              billing_ref = COALESCE($2, billing_ref), updated_at = now()
          WHERE organization_id = $1`,
         [change.organizationId, result.providerRef],
@@ -341,7 +350,8 @@ async function escalateRepeatedPlanChangeFailure(organizationId: string, metadat
   const pool = getPool();
   const { rows } = await pool.query(
     `UPDATE org_subscriptions
-     SET pending_plan_failed_attempts = pending_plan_failed_attempts + 1, updated_at = now()
+     SET pending_plan_failed_attempts = pending_plan_failed_attempts + 1,
+         pending_plan_last_failed_at = now(), updated_at = now()
      WHERE organization_id = $1 AND pending_plan_id IS NOT NULL
      RETURNING pending_plan_failed_attempts, pending_plan_failure_alerted_at, plan_id, pending_plan_id, pending_plan_effective_at`,
     [organizationId],
