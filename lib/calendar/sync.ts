@@ -1,8 +1,8 @@
 import "server-only";
 import { getPool } from "../db";
 import { getOrgSettings } from "../org-settings";
-import type { OrgSettings } from "../org-settings-schema";
 import { connectorRequest, getConnectedCalendarProviders } from "./connections";
+import { hasOrgCalendarConnection, orgCalendarRequestVia, resolveCalendarRoute, type CalendarRoute } from "./org-connections";
 import {
   createAppointment,
   externalEventExists,
@@ -19,8 +19,9 @@ import {
  * Two-way calendar sync.
  *
  * Outbound (push): booking/rescheduling/cancelling an appointment in Revenue
- * Rescue mirrors the change to the org's configured calendar (Google or
- * Outlook via the workspace's Replit connectors). Push failures NEVER fail the
+ * Rescue mirrors the change to the org's configured calendar — the org's own
+ * OAuth-connected Google/Outlook account when one exists, otherwise the
+ * workspace's Replit connectors. Push failures NEVER fail the
  * appointment write — the appointment is the source of truth; sync is
  * best-effort and logged.
  *
@@ -65,10 +66,10 @@ type OutlookEvent = {
   end?: { dateTime?: string; timeZone?: string };
 };
 
-async function pushCreate(provider: "google_calendar" | "outlook_calendar", appt: Appointment): Promise<string | null> {
+async function pushCreate(route: CalendarRoute, organizationId: string, provider: "google_calendar" | "outlook_calendar", appt: Appointment): Promise<string | null> {
   const { start, end } = eventTimes(appt);
   if (provider === "google_calendar") {
-    const { data } = await connectorRequest<GoogleEvent>("google-calendar", "/calendar/v3/calendars/primary/events", {
+    const { data } = await orgCalendarRequestVia<GoogleEvent>(route, organizationId, "google_calendar", "/calendar/v3/calendars/primary/events", {
       method: "POST",
       body: {
         summary: eventSummary(appt),
@@ -80,7 +81,7 @@ async function pushCreate(provider: "google_calendar" | "outlook_calendar", appt
     });
     return data?.id ?? null;
   }
-  const { data } = await connectorRequest<OutlookEvent>("outlook", "/v1.0/me/events", {
+  const { data } = await orgCalendarRequestVia<OutlookEvent>(route, organizationId, "outlook_calendar", "/v1.0/me/events", {
     method: "POST",
     body: {
       subject: eventSummary(appt),
@@ -99,13 +100,16 @@ export async function pushAppointmentToCalendar(organizationId: string, appointm
     const settings = await getOrgSettings(organizationId);
     const provider = settings.calendar.syncProvider;
     if (provider === "none") return;
-    const connected = await getConnectedCalendarProviders();
-    if ((provider === "google_calendar" && !connected.google) || (provider === "outlook_calendar" && !connected.outlook)) return;
+    // New events are created under the org's own account when connected,
+    // otherwise the workspace connector. The chosen source is persisted with
+    // the external ref so later updates/pulls use the SAME account.
+    const route = await resolveCalendarRoute(organizationId, provider);
+    if (route === null) return;
     const appt = await getAppointment(organizationId, appointmentId);
     if (!appt || appt.externalEventId) return;
-    const eventId = await pushCreate(provider, appt);
+    const eventId = await pushCreate(route, organizationId, provider, appt);
     if (eventId) {
-      await setAppointmentExternalRef(organizationId, appointmentId, provider, eventId);
+      await setAppointmentExternalRef(organizationId, appointmentId, provider, eventId, route);
       await logActivity({
         organizationId,
         leadId: appt.leadId,
@@ -126,25 +130,34 @@ export async function pushAppointmentUpdateToCalendar(organizationId: string, ap
     const appt = await getAppointment(organizationId, appointmentId);
     if (!appt || !appt.externalEventId) return;
     if (appt.provider !== "google_calendar" && appt.provider !== "outlook_calendar") return;
-    const connected = await getConnectedCalendarProviders();
-    if ((appt.provider === "google_calendar" && !connected.google) || (appt.provider === "outlook_calendar" && !connected.outlook)) return;
+    // Always talk to the SAME account that created the event (stored source);
+    // never re-resolve dynamically — a route flip after connect/disconnect
+    // would target the wrong account. If that account is no longer available,
+    // skip: sync for it has stopped by design.
+    const source: CalendarRoute = appt.externalCredentialSource ?? "workspace";
+    if (source === "org") {
+      if (!(await hasOrgCalendarConnection(organizationId, appt.provider))) return;
+    } else {
+      const connected = await getConnectedCalendarProviders();
+      if ((appt.provider === "google_calendar" && !connected.google) || (appt.provider === "outlook_calendar" && !connected.outlook)) return;
+    }
 
     const cancelled = appt.status === "cancelled";
     const { start, end } = eventTimes(appt);
     if (appt.provider === "google_calendar") {
       if (cancelled) {
-        await connectorRequest("google-calendar", `/calendar/v3/calendars/primary/events/${encodeURIComponent(appt.externalEventId)}`, { method: "DELETE", allow404: true });
+        await orgCalendarRequestVia(source, organizationId, "google_calendar", `/calendar/v3/calendars/primary/events/${encodeURIComponent(appt.externalEventId)}`, { method: "DELETE", allow404: true });
       } else {
-        await connectorRequest("google-calendar", `/calendar/v3/calendars/primary/events/${encodeURIComponent(appt.externalEventId)}`, {
+        await orgCalendarRequestVia(source, organizationId, "google_calendar", `/calendar/v3/calendars/primary/events/${encodeURIComponent(appt.externalEventId)}`, {
           method: "PATCH",
           allow404: true,
           body: { start: { dateTime: start.toISOString() }, end: { dateTime: end.toISOString() } },
         });
       }
     } else if (cancelled) {
-      await connectorRequest("outlook", `/v1.0/me/events/${encodeURIComponent(appt.externalEventId)}`, { method: "DELETE", allow404: true });
+      await orgCalendarRequestVia(source, organizationId, "outlook_calendar", `/v1.0/me/events/${encodeURIComponent(appt.externalEventId)}`, { method: "DELETE", allow404: true });
     } else {
-      await connectorRequest("outlook", `/v1.0/me/events/${encodeURIComponent(appt.externalEventId)}`, {
+      await orgCalendarRequestVia(source, organizationId, "outlook_calendar", `/v1.0/me/events/${encodeURIComponent(appt.externalEventId)}`, {
         method: "PATCH",
         allow404: true,
         body: { start: { dateTime: start.toISOString(), timeZone: "UTC" }, end: { dateTime: end.toISOString(), timeZone: "UTC" } },
@@ -165,29 +178,48 @@ export type CalendarSyncResult = {
 };
 
 async function pullEventChanges(result: CalendarSyncResult): Promise<void> {
-  const connected = await getConnectedCalendarProviders(true);
-  const providers: Array<"google_calendar" | "outlook_calendar"> = [];
-  if (connected.google) providers.push("google_calendar");
-  if (connected.outlook) providers.push("outlook_calendar");
-  if (providers.length === 0) return;
+  // Refresh the workspace connector cache once per pass.
+  const workspace = await getConnectedCalendarProviders(true);
+  const refs = await listSyncedAppointmentRefs(["google_calendar", "outlook_calendar"]);
+  // Memoized org-connection presence per org+provider for this pass.
+  const orgConnCache = new Map<string, boolean>();
+  const hasOrgConn = async (organizationId: string, provider: "google_calendar" | "outlook_calendar") => {
+    const key = `${organizationId}:${provider}`;
+    if (!orgConnCache.has(key)) orgConnCache.set(key, await hasOrgCalendarConnection(organizationId, provider));
+    return orgConnCache.get(key) === true;
+  };
 
-  const refs = await listSyncedAppointmentRefs(providers);
   for (const ref of refs) {
+    if (ref.provider !== "google_calendar" && ref.provider !== "outlook_calendar") continue;
+    // Each event is checked with the SAME credentials that created it (stored
+    // credential source). If that account is no longer available (org
+    // disconnected, or workspace connector unauthorized), skip — a lookup
+    // under a DIFFERENT account would 404 and falsely cancel a valid
+    // appointment.
+    const source = ref.credentialSource;
+    if (source === "org") {
+      if (!(await hasOrgConn(ref.organizationId, ref.provider))) continue;
+    } else if (
+      (ref.provider === "google_calendar" && !workspace.google) ||
+      (ref.provider === "outlook_calendar" && !workspace.outlook)
+    ) {
+      continue;
+    }
     result.checked += 1;
     try {
       let externalStart: string | null = null;
       let externalCancelled = false;
       if (ref.provider === "google_calendar") {
-        const { status, data } = await connectorRequest<GoogleEvent>(
-          "google-calendar", `/calendar/v3/calendars/primary/events/${encodeURIComponent(ref.externalEventId)}`, { allow404: true },
+        const { status, data } = await orgCalendarRequestVia<GoogleEvent>(
+          source, ref.organizationId, "google_calendar", `/calendar/v3/calendars/primary/events/${encodeURIComponent(ref.externalEventId)}`, { allow404: true },
         );
         externalCancelled = status === 404 || data?.status === "cancelled";
         externalStart = data?.start?.dateTime ?? null;
       } else {
         // Request Graph to return all dateTime values in UTC so we never need to
         // convert — the Prefer header forces server-side timezone conversion.
-        const { status, data } = await connectorRequest<OutlookEvent>(
-          "outlook", `/v1.0/me/events/${encodeURIComponent(ref.externalEventId)}`,
+        const { status, data } = await orgCalendarRequestVia<OutlookEvent>(
+          source, ref.organizationId, "outlook_calendar", `/v1.0/me/events/${encodeURIComponent(ref.externalEventId)}`,
           { allow404: true, headers: { "Prefer": 'outlook.timezone="UTC"' } },
         );
         externalCancelled = status === 404 || data?.isCancelled === true;

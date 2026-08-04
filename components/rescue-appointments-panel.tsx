@@ -13,11 +13,19 @@ type Appointment = {
 
 type Adapter = { id: string; label: string; connected: boolean; detail: string };
 
+type OrgAccount = { connected: boolean; accountEmail: string | null };
+
 type CalendarInfo = {
   syncProvider: "none" | "google_calendar" | "outlook_calendar";
   calendlyUrl: string;
   bookingUrl: string;
   connections: { google: boolean; outlook: boolean; calendly: boolean };
+  orgAccounts: {
+    google: OrgAccount;
+    outlook: OrgAccount;
+    oauthConfigured: { google: boolean; outlook: boolean };
+    workspaceFallback: { google: boolean; outlook: boolean };
+  };
   canConfigure: boolean;
 };
 
@@ -115,6 +123,17 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
     } finally { setBusy(false); }
   }
 
+  async function disconnectAccount(provider: "google_calendar" | "outlook_calendar") {
+    const label = provider === "google_calendar" ? "Google Calendar" : "Outlook";
+    if (!window.confirm(`Disconnect ${label}? Stored tokens are deleted and bookings stop syncing to that account.`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/calendar/oauth/${provider}`, { method: "DELETE" });
+      if (!res.ok) setError((await res.json().catch(() => null))?.error ?? "Could not disconnect the calendar.");
+      else { setError(""); await load(); }
+    } finally { setBusy(false); }
+  }
+
   async function copyBookingLink() {
     if (!calendar?.bookingUrl) return;
     try {
@@ -130,6 +149,14 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
   return (
     <div className="space-y-6">
       {scoped && <p className="text-xs text-white/45">Showing appointments for your assigned leads only.</p>}
+      {searchParams.get("calendar") === "connected" && (
+        <p className="rounded-xl border border-forge-lime/40 bg-forge-lime/10 px-4 py-3 text-sm text-forge-lime">Calendar account connected. New bookings will sync to it.</p>
+      )}
+      {searchParams.get("calendar") === "error" && (
+        <p className="rounded-xl border border-forge-rust/40 bg-forge-rust/10 px-4 py-3 text-sm text-forge-rust">
+          Calendar connection failed{searchParams.get("reason") ? ` (${searchParams.get("reason")})` : ""}. Please try again.
+        </p>
+      )}
       {error && <p className="rounded-xl border border-forge-rust/40 bg-forge-rust/10 px-4 py-3 text-sm text-forge-rust">{error}</p>}
 
       <div className={box}>
@@ -160,6 +187,48 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
             </div>
           ) : (
             <p className="mt-3 text-sm text-white/50">Booking link unavailable.</p>
+          )}
+          {calendar.canConfigure && calendar.orgAccounts && (
+            <div className="mt-5 border-t border-white/10 pt-4">
+              <h3 className="text-sm font-semibold">Your calendar accounts</h3>
+              <p className="mt-1 text-xs text-white/45">Connect this organization&apos;s own Google or Outlook account so bookings land on your calendar.</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {(["google", "outlook"] as const).map((key) => {
+                  const provider = key === "google" ? "google_calendar" : "outlook_calendar";
+                  const label = key === "google" ? "Google Calendar" : "Outlook Calendar";
+                  const account = calendar.orgAccounts[key];
+                  const configured = calendar.orgAccounts.oauthConfigured[key];
+                  const fallback = calendar.orgAccounts.workspaceFallback[key];
+                  const returnTo = typeof window === "undefined" ? "" : `${window.location.pathname}${window.location.search}`;
+                  return (
+                    <div key={key} className="rounded-xl bg-black/30 p-3">
+                      <p className="text-sm font-semibold">{label}</p>
+                      {account.connected ? (
+                        <>
+                          <p className="mt-1 text-xs text-forge-lime">Connected{account.accountEmail ? ` as ${account.accountEmail}` : ""}</p>
+                          <button type="button" disabled={busy} onClick={() => void disconnectAccount(provider)} className="mt-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 hover:border-forge-rust hover:text-forge-rust disabled:opacity-40">
+                            Disconnect
+                          </button>
+                        </>
+                      ) : configured ? (
+                        <>
+                          <p className="mt-1 text-xs text-white/45">{fallback ? "Using the shared workspace account until you connect your own." : "Not connected."}</p>
+                          <a href={`/api/orgs/${orgId}/calendar/oauth/${provider}?returnTo=${encodeURIComponent(returnTo)}`} className="btn-primary mt-2 inline-block px-3 py-1.5 text-xs">
+                            Connect {key === "google" ? "Google" : "Outlook"}
+                          </a>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-xs text-white/45">
+                          {fallback
+                            ? "Syncing via the shared workspace account. Per-org sign-in is not configured on this server."
+                            : "Per-org sign-in is not configured on this server — ask your MogulForge admin to enable it."}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
           {calendar.canConfigure && (
             <form onSubmit={saveCalendarSettings} className="mt-5 flex flex-wrap items-end gap-3 border-t border-white/10 pt-4">

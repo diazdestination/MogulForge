@@ -5,6 +5,8 @@ import { sendOrgAlertInBackground } from "@/lib/org-alerts";
 import { createAppointment, getLeadEngagement, listAppointments, logActivity, setLeadStage } from "@/lib/rescue-engage/store";
 import { isAppointmentStatus, isAppointmentType, resolveCalendarAdapters } from "@/lib/rescue-engage/calendar-adapters";
 import { getConnectedCalendarProviders } from "@/lib/calendar/connections";
+import { listOrgCalendarConnections } from "@/lib/calendar/org-connections";
+import { getOAuthAppCredentials } from "@/lib/calendar/oauth-config";
 import { pushAppointmentToCalendar } from "@/lib/calendar/sync";
 import { getOrgSettings } from "@/lib/org-settings";
 import { buildBookingUrl } from "@/lib/booking-token";
@@ -24,20 +26,25 @@ export const GET = guard(async (request: Request, { params }: Ctx) => {
   const url = new URL(request.url);
   const status = url.searchParams.get("status") ?? undefined;
   if (status && !isAppointmentStatus(status)) throw new ApiError(400, "Unknown status filter.");
-  const [appointments, connected, settings] = await Promise.all([
+  const [appointments, connected, settings, orgConnections] = await Promise.all([
     listAppointments(org.id, {
       assignedUserId: restricted ? user.id : undefined,
       status: status && isAppointmentStatus(status) ? status : undefined,
     }),
     getConnectedCalendarProviders(),
     getOrgSettings(org.id),
+    listOrgCalendarConnections(org.id),
   ]);
+  const orgGoogle = orgConnections.find((c) => c.provider === "google_calendar") ?? null;
+  const orgOutlook = orgConnections.find((c) => c.provider === "outlook_calendar") ?? null;
   const bookingUrl = buildBookingUrl(url.origin, org.id);
   return NextResponse.json({
     appointments,
     adapters: resolveCalendarAdapters({
-      google: connected.google,
-      outlook: connected.outlook,
+      // An org's own OAuth connection counts as connected even when the
+      // workspace-level connector isn't authorized.
+      google: Boolean(orgGoogle) || connected.google,
+      outlook: Boolean(orgOutlook) || connected.outlook,
       calendly: connected.calendly,
       syncProvider: settings.calendar.syncProvider,
       calendlyUrl: settings.calendar.calendlyUrl,
@@ -46,7 +53,21 @@ export const GET = guard(async (request: Request, { params }: Ctx) => {
     calendar: {
       ...settings.calendar,
       bookingUrl,
-      connections: connected,
+      connections: {
+        google: Boolean(orgGoogle) || connected.google,
+        outlook: Boolean(orgOutlook) || connected.outlook,
+        calendly: connected.calendly,
+      },
+      // Per-org OAuth state for the "Your calendar accounts" UI.
+      orgAccounts: {
+        google: orgGoogle ? { connected: true, accountEmail: orgGoogle.accountEmail } : { connected: false, accountEmail: null },
+        outlook: orgOutlook ? { connected: true, accountEmail: orgOutlook.accountEmail } : { connected: false, accountEmail: null },
+        oauthConfigured: {
+          google: Boolean(getOAuthAppCredentials("google_calendar")),
+          outlook: Boolean(getOAuthAppCredentials("outlook_calendar")),
+        },
+        workspaceFallback: { google: connected.google, outlook: connected.outlook },
+      },
       canConfigure: MANAGER_ROLES.includes(role),
     },
     scopedToAssigned: restricted,

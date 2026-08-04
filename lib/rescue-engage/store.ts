@@ -733,6 +733,8 @@ export type Appointment = {
   status: AppointmentStatus;
   provider: AppointmentProvider;
   externalEventId: string | null;
+  /** Which credentials created the external event; null when unsynced. Legacy rows default to "workspace" via backfill. */
+  externalCredentialSource: "org" | "workspace" | null;
   notes: string | null;
   leadFirstName: string | null;
   leadLastName: string | null;
@@ -758,6 +760,7 @@ function mapAppointment(row: any): Appointment {
     status: row.status,
     provider: row.provider,
     externalEventId: row.external_event_id,
+    externalCredentialSource: row.external_credential_source ?? (row.external_event_id ? "workspace" : null),
     notes: row.notes,
     leadFirstName: row.lead_first_name ?? null,
     leadLastName: row.lead_last_name ?? null,
@@ -810,11 +813,12 @@ export async function setAppointmentExternalRef(
   appointmentId: string,
   provider: AppointmentProvider,
   externalEventId: string | null,
+  credentialSource: "org" | "workspace" | null = null,
 ): Promise<void> {
   await getPool().query(
-    `UPDATE rescue_appointments SET provider = $3, external_event_id = $4, updated_at = now()
+    `UPDATE rescue_appointments SET provider = $3, external_event_id = $4, external_credential_source = $5, updated_at = now()
      WHERE organization_id = $1 AND id = $2`,
-    [organizationId, appointmentId, provider, externalEventId],
+    [organizationId, appointmentId, provider, externalEventId, externalEventId ? credentialSource : null],
   );
 }
 export async function getAppointment(organizationId: string, appointmentId: string): Promise<Appointment | null> {
@@ -1063,6 +1067,8 @@ export type SyncedAppointmentRef = {
   organizationId: string;
   provider: AppointmentProvider;
   externalEventId: string;
+  /** Which credentials created the external event ("workspace" for pre-OAuth legacy rows). */
+  credentialSource: "org" | "workspace";
   scheduledStart: string;
   scheduledEnd: string | null;
   status: AppointmentStatus;
@@ -1072,7 +1078,7 @@ export type SyncedAppointmentRef = {
 export async function listSyncedAppointmentRefs(providers: AppointmentProvider[]): Promise<SyncedAppointmentRef[]> {
   if (providers.length === 0) return [];
   const { rows } = await getPool().query(
-    `SELECT id, organization_id, provider, external_event_id, scheduled_start, scheduled_end, status
+    `SELECT id, organization_id, provider, external_event_id, external_credential_source, scheduled_start, scheduled_end, status
      FROM rescue_appointments
      WHERE provider = ANY($1) AND external_event_id IS NOT NULL
        AND status IN ('requested', 'confirmed', 'rescheduled')
@@ -1085,6 +1091,7 @@ export async function listSyncedAppointmentRefs(providers: AppointmentProvider[]
     organizationId: row.organization_id,
     provider: row.provider,
     externalEventId: row.external_event_id,
+    credentialSource: row.external_credential_source === "org" ? "org" : "workspace",
     scheduledStart: row.scheduled_start,
     scheduledEnd: row.scheduled_end,
     status: row.status,
