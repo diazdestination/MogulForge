@@ -238,6 +238,48 @@ test("rendered /embed/widget ignores invalid per-mount theme params", async () =
   assert.ok(html.includes("border-radius:8px"), "invalid t_radius falls back to the lg control radius");
 });
 
+// The leads/appointments modules render a data-loading shell on the server
+// (rows only arrive after the client fetches /api/embed/*), so the initial
+// HTML exposes the merged theme through the root background/text styles.
+// Control radii/accents only appear once data renders client-side, so the
+// SSR assertions focus on the style contexts that exist in the served HTML.
+for (const path of ["/embed/leads", "/embed/appointments"]) {
+  test(`rendered ${path} applies valid per-mount theme overrides as inline styles`, async () => {
+    const html = await fetchEmbedHtml(path, {
+      t_mode: "light",
+      t_accent: "#ff0055",
+      t_bg: "#112233",
+      t_radius: "xl",
+    });
+    // Root background from t_bg, served in the initial HTML (pre-hydration).
+    // The loading shell merges the muted text color over the root style, so
+    // the served style is background + light-mode muted color together.
+    assert.ok(html.includes("background-color:#112233"), `${path} HTML must inline the t_bg override`);
+    assert.ok(html.includes("color:rgba(17,20,24,0.6)"), `${path} HTML must use the light-mode muted color`);
+    assert.ok(!html.includes("background-color:#0b0e11"), "dark default background must be overridden");
+    assert.ok(!html.includes("color:rgba(255,255,255,0.55)"), "dark muted color must be overridden");
+  });
+
+  test(`rendered ${path} ignores invalid per-mount theme params`, async () => {
+    const html = await fetchEmbedHtml(path, {
+      t_mode: "neon",
+      t_accent: "red; background: url(javascript:alert(1))",
+      t_bg: "url(https://evil.example.net/x.png)",
+      t_radius: "9999px",
+      t_logo: "javascript:alert(1)",
+    });
+    // Hostile values must never reach a style context (the raw query string
+    // is echoed inside Next's serialized payload, so check style forms only).
+    assert.ok(!html.includes("background-color:url("), "bogus t_bg must never reach a style");
+    assert.ok(!html.includes("background-color:red"), "non-hex t_accent must never reach a style");
+    assert.ok(!html.includes("border-radius:9999px"), "bogus radius must never reach a style");
+    assert.ok(!/<img[^>]+javascript:/i.test(html), "unsafe logo scheme must never render as an image");
+    // The page falls back to the org/dark defaults for its root shell.
+    assert.ok(html.includes("background-color:#0b0e11"), "invalid t_bg falls back to the dark default background");
+    assert.ok(html.includes("color:rgba(255,255,255,0.55)"), "invalid t_mode falls back to the dark muted color");
+  });
+}
+
 test("loader.js whitelists the theme query params for per-mount overrides", async () => {
   const res = await fetch(`${BASE}/embed/v1/loader.js`);
   assert.equal(res.status, 200);
