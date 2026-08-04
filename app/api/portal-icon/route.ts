@@ -21,10 +21,25 @@ import { fetchPublicImage, UnsafeImageUrlError } from "@/lib/safe-image-fetch";
  * Falls back gracefully: processing failures redirect the browser to the raw
  * logo URL (a client-side fetch, no SSRF surface) so the tab still shows
  * *something*; unsafe URLs get 404 rather than any fetch at all.
+ *
+ * Server-side cache: generated PNGs are stored in memory keyed by
+ * `orgId:logoUrl:size`. The layout's `v=` query param already changes
+ * whenever the org's logo URL changes, so the browser will hit the server with
+ * a new URL — which naturally misses the cache and builds a fresh entry.
+ * The cache is capped at MAX_CACHE_ENTRIES to bound memory use.
  */
 
 const ALLOWED_SIZES = new Set([32, 64, 180]);
 const FETCH_TIMEOUT_MS = 5000;
+
+/** Max number of distinct (org × logo × size) entries to keep in memory. */
+const MAX_CACHE_ENTRIES = 500;
+
+/**
+ * Module-level cache — persists across requests in the same process/instance.
+ * Key: `${orgId}:${logoUrl}:${size}`  Value: PNG buffer
+ */
+const iconCache = new Map<string, Buffer>();
 
 export async function GET(request: NextRequest) {
   const context = await getPortalHostContext();
@@ -39,6 +54,19 @@ export async function GET(request: NextRequest) {
   const sizeParam = Number(request.nextUrl.searchParams.get("size") ?? "64");
   const size = ALLOWED_SIZES.has(sizeParam) ? sizeParam : 64;
 
+  const cacheKey = `${context.org.id}:${logoUrl}:${size}`;
+  const cached = iconCache.get(cacheKey);
+  if (cached) {
+    return new NextResponse(new Uint8Array(cached), {
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+        "X-Robots-Tag": "noindex",
+        "X-Icon-Cache": "hit",
+      },
+    });
+  }
+
   try {
     const input =
       verdict.kind === "relative"
@@ -49,6 +77,11 @@ export async function GET(request: NextRequest) {
       .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
       .toBuffer();
+
+    // Evict everything when the cap is reached to bound memory use.
+    // The next cold request per org will rebuild its entry.
+    if (iconCache.size >= MAX_CACHE_ENTRIES) iconCache.clear();
+    iconCache.set(cacheKey, png);
 
     return new NextResponse(new Uint8Array(png), {
       headers: {
