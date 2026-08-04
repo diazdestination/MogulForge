@@ -7,6 +7,9 @@ import {
   type OrgCalendarProvider,
 } from "./oauth-config";
 import { connectorRequest, getConnectedCalendarProviders } from "./connections";
+import { sendOrgAlertInBackground } from "../org-alerts";
+import { buildCalendarConnectionErrorEmail } from "../org-alerts-content.ts";
+import { SITE_URL } from "../site";
 
 /**
  * Per-org calendar OAuth connections: each organization can authorize its own
@@ -21,11 +24,14 @@ import { connectorRequest, getConnectedCalendarProviders } from "./connections";
  * bookings to the platform owner's calendar.
  */
 
+export type OrgCalendarConnectionStatus = "active" | "error";
+
 export type OrgCalendarConnection = {
   id: string;
   organizationId: string;
   provider: OrgCalendarProvider;
   accountEmail: string | null;
+  status: OrgCalendarConnectionStatus;
   createdAt: string;
 };
 
@@ -37,10 +43,15 @@ type ConnectionRow = {
   access_token_enc: string;
   refresh_token_enc: string | null;
   expires_at: string | null;
+  status: OrgCalendarConnectionStatus;
+  refresh_failure_count: number;
   created_at: string;
   /** Space-separated scopes the provider actually granted (null on pre-scope rows). */
   granted_scopes: string | null;
 };
+
+/** Consecutive token-refresh failures before a connection is marked broken. */
+export const REFRESH_ERROR_THRESHOLD = 3;
 
 async function getConnectionRow(organizationId: string, provider: OrgCalendarProvider): Promise<ConnectionRow | null> {
   const { rows } = await getPool().query(
@@ -53,7 +64,7 @@ async function getConnectionRow(organizationId: string, provider: OrgCalendarPro
 /** Public (safe) view of an org's own calendar connections, for the UI. */
 export async function listOrgCalendarConnections(organizationId: string): Promise<OrgCalendarConnection[]> {
   const { rows } = await getPool().query(
-    "SELECT id, organization_id, provider, account_email, created_at FROM org_calendar_connections WHERE organization_id = $1",
+    "SELECT id, organization_id, provider, account_email, status, created_at FROM org_calendar_connections WHERE organization_id = $1",
     [organizationId],
   );
   return rows.map((r) => ({
@@ -61,6 +72,7 @@ export async function listOrgCalendarConnections(organizationId: string): Promis
     organizationId: r.organization_id,
     provider: r.provider,
     accountEmail: r.account_email,
+    status: r.status === "error" ? "error" : "active",
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
   }));
 }
@@ -142,6 +154,9 @@ export async function completeOrgCalendarConnection(input: {
        expires_at = EXCLUDED.expires_at,
        connected_by = EXCLUDED.connected_by,
        granted_scopes = COALESCE(EXCLUDED.granted_scopes, org_calendar_connections.granted_scopes),
+       status = 'active',
+       refresh_failure_count = 0,
+       last_refresh_error = NULL,
        updated_at = now()`,
     [
       input.organizationId,
@@ -178,6 +193,48 @@ export async function disconnectOrgCalendar(organizationId: string, provider: Or
   return true;
 }
 
+/**
+ * Records a failed token refresh. After REFRESH_ERROR_THRESHOLD consecutive
+ * failures the connection flips to 'error' (surfaced as "Reconnect" in the
+ * Appointments UI) and the org's notification addresses get an email nudge —
+ * once per outage, mirroring the CRM connection alert pattern.
+ */
+async function recordRefreshFailure(row: ConnectionRow, error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+  const { rows } = await getPool().query(
+    `UPDATE org_calendar_connections
+     SET refresh_failure_count = refresh_failure_count + 1, last_refresh_error = $3, updated_at = now()
+     WHERE organization_id = $1 AND provider = $2
+     RETURNING refresh_failure_count, status`,
+    [row.organization_id, row.provider, message],
+  );
+  const count = Number(rows[0]?.refresh_failure_count ?? 0);
+  if (count < REFRESH_ERROR_THRESHOLD || rows[0]?.status !== "active") return;
+  const flipped = await getPool().query(
+    `UPDATE org_calendar_connections SET status = 'error', updated_at = now()
+     WHERE organization_id = $1 AND provider = $2 AND status = 'active'`,
+    [row.organization_id, row.provider],
+  );
+  if ((flipped.rowCount ?? 0) === 0) return; // another server flipped it first — alert already sent
+  try {
+    const { rows: orgRows } = await getPool().query("SELECT name FROM organizations WHERE id = $1", [row.organization_id]);
+    sendOrgAlertInBackground(
+      row.organization_id,
+      "calendarConnectionAlerts",
+      buildCalendarConnectionErrorEmail({
+        orgName: orgRows[0]?.name ? String(orgRows[0].name) : "Your organization",
+        providerLabel: row.provider === "google_calendar" ? "Google Calendar" : "Outlook Calendar",
+        accountEmail: row.account_email,
+        consecutiveFailures: count,
+        lastError: message,
+        appointmentsUrl: `${SITE_URL}/dashboard/revenue-rescue/appointments`,
+      }),
+    );
+  } catch (alertError) {
+    console.error(`Calendar connection error alert failed for organization ${row.organization_id}`, alertError);
+  }
+}
+
 /** Returns a valid (refreshed if needed) access token for the org's own connection, or throws. */
 async function getValidAccessToken(row: ConnectionRow): Promise<string> {
   const expiresSoon = row.expires_at ? new Date(row.expires_at).getTime() - Date.now() < 2 * 60 * 1000 : false;
@@ -191,16 +248,25 @@ async function getValidAccessToken(row: ConnectionRow): Promise<string> {
   }
   const creds = getOAuthAppCredentials(row.provider);
   if (!creds) throw new Error(`${row.provider} OAuth app is no longer configured`);
-  const tokens = await tokenRequest(row.provider, {
-    grant_type: "refresh_token",
-    refresh_token: refresh,
-    client_id: creds.clientId,
-    client_secret: creds.clientSecret,
-  });
+  let tokens: TokenResponse;
+  try {
+    tokens = await tokenRequest(row.provider, {
+      grant_type: "refresh_token",
+      refresh_token: refresh,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+    });
+  } catch (error) {
+    await recordRefreshFailure(row, error).catch((trackError) =>
+      console.error(`Failed to record calendar refresh failure for org ${row.organization_id}`, trackError),
+    );
+    throw error;
+  }
   const expiresAt = tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : null;
   await getPool().query(
     `UPDATE org_calendar_connections
-     SET access_token_enc = $3, refresh_token_enc = COALESCE($4, refresh_token_enc), expires_at = $5, updated_at = now()
+     SET access_token_enc = $3, refresh_token_enc = COALESCE($4, refresh_token_enc), expires_at = $5,
+         status = 'active', refresh_failure_count = 0, last_refresh_error = NULL, updated_at = now()
      WHERE organization_id = $1 AND provider = $2`,
     [
       row.organization_id,

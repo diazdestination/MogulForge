@@ -60,8 +60,12 @@ export const GET = guard(async (request: Request, { params }: Ctx) => {
       },
       // Per-org OAuth state for the "Your calendar accounts" UI.
       orgAccounts: {
-        google: orgGoogle ? { connected: true, accountEmail: orgGoogle.accountEmail } : { connected: false, accountEmail: null },
-        outlook: orgOutlook ? { connected: true, accountEmail: orgOutlook.accountEmail } : { connected: false, accountEmail: null },
+        google: orgGoogle
+          ? { connected: true, accountEmail: orgGoogle.accountEmail, broken: orgGoogle.status === "error" }
+          : { connected: false, accountEmail: null, broken: false },
+        outlook: orgOutlook
+          ? { connected: true, accountEmail: orgOutlook.accountEmail, broken: orgOutlook.status === "error" }
+          : { connected: false, accountEmail: null, broken: false },
         oauthConfigured: {
           google: Boolean(getOAuthAppCredentials("google_calendar")),
           outlook: Boolean(getOAuthAppCredentials("outlook_calendar")),

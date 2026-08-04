@@ -201,6 +201,32 @@ export function buildCrmConnectionRecoveredEmail(input: {
   };
 }
 
+export function buildCalendarConnectionErrorEmail(input: {
+  orgName: string;
+  providerLabel: string;
+  accountEmail: string | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  appointmentsUrl: string;
+}): AlertEmail {
+  return {
+    subject: `Action needed: your ${input.providerLabel} connection stopped syncing`,
+    html: wrap(
+      `⚠️ Calendar connection stopped syncing — ${input.providerLabel}`,
+      `<p style="margin-top:0;color:#374151;">Your organization's own ${escapeHtml(input.providerLabel)} connection${input.accountEmail ? ` (<strong>${escapeHtml(input.accountEmail)}</strong>)` : ""} failed ${input.consecutiveFailures} token refreshes in a row, so new bookings are no longer syncing to that calendar. This usually means access was revoked or the sign-in expired.</p>
+       ${detailRows([
+         ["Provider", input.providerLabel],
+         ["Account", input.accountEmail ?? "—"],
+         ["Consecutive failures", String(input.consecutiveFailures)],
+         ["Last error", (input.lastError ?? "").slice(0, 300)],
+       ])}
+       <p style="margin-top:16px;"><a href="${escapeHtml(input.appointmentsUrl)}" style="background:#111827;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px;">Reconnect on the Appointments page</a></p>
+       <p style="color:#374151;font-size:13px;">Click Reconnect next to ${escapeHtml(input.providerLabel)} and sign in again — syncing resumes automatically once the account is re-authorized.</p>`,
+      `Sent by ${input.orgName} alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export function buildCustomDomainErrorEmail(input: {
   orgName: string;
   domain: string;

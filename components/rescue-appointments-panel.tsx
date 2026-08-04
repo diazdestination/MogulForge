@@ -13,7 +13,7 @@ type Appointment = {
 
 type Adapter = { id: string; label: string; connected: boolean; detail: string };
 
-type OrgAccount = { connected: boolean; accountEmail: string | null };
+type OrgAccount = { connected: boolean; accountEmail: string | null; broken: boolean };
 
 type CalendarInfo = {
   syncProvider: "none" | "google_calendar" | "outlook_calendar";
@@ -203,7 +203,21 @@ export function RescueAppointmentsPanel({ orgId, canWrite }: { orgId: string; ca
                   return (
                     <div key={key} className="rounded-xl bg-black/30 p-3">
                       <p className="text-sm font-semibold">{label}</p>
-                      {account.connected ? (
+                      {account.connected && account.broken ? (
+                        <>
+                          <p className="mt-1 text-xs text-forge-rust">
+                            Connection stopped syncing{account.accountEmail ? ` (${account.accountEmail})` : ""} — access looks revoked or expired. Bookings are not reaching this calendar.
+                          </p>
+                          {configured && (
+                            <a href={`/api/orgs/${orgId}/calendar/oauth/${provider}?returnTo=${encodeURIComponent(returnTo)}`} className="btn-primary mt-2 inline-block px-3 py-1.5 text-xs">
+                              Reconnect {key === "google" ? "Google" : "Outlook"}
+                            </a>
+                          )}
+                          <button type="button" disabled={busy} onClick={() => void disconnectAccount(provider)} className="mt-2 ml-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 hover:border-forge-rust hover:text-forge-rust disabled:opacity-40">
+                            Disconnect
+                          </button>
+                        </>
+                      ) : account.connected ? (
                         <>
                           <p className="mt-1 text-xs text-forge-lime">Connected{account.accountEmail ? ` as ${account.accountEmail}` : ""}</p>
                           <button type="button" disabled={busy} onClick={() => void disconnectAccount(provider)} className="mt-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 hover:border-forge-rust hover:text-forge-rust disabled:opacity-40">

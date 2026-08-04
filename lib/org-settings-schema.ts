@@ -28,6 +28,8 @@ export type NotificationSettings = {
   replyAlerts: boolean;
   appointmentAlerts: boolean;
   crmConnectionAlerts: boolean;
+  /** Alert when the org's own Google/Outlook calendar connection stops syncing. */
+  calendarConnectionAlerts: boolean;
   /** Alert when the org's active custom domain stops resolving correctly. */
   customDomainAlerts: boolean;
   weeklyDigest: boolean;
@@ -70,7 +72,7 @@ export type OrgSettingsSection = (typeof ORG_SETTINGS_SECTIONS)[number];
 export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   contact: { contactName: "", contactEmail: "", contactPhone: "", website: "", address: "" },
   businessHours: { start: "08:00", end: "18:00", days: [1, 2, 3, 4, 5] },
-  notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, crmConnectionAlerts: true, customDomainAlerts: true, weeklyDigest: false, planChangeReminders: true, notificationEmails: [] },
+  notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, crmConnectionAlerts: true, calendarConnectionAlerts: true, customDomainAlerts: true, weeklyDigest: false, planChangeReminders: true, notificationEmails: [] },
   messaging: { quietHoursStart: 20, quietHoursEnd: 8, defaultTone: "professional", defaultSenderName: "", defaultBookingLink: "" },
   calendar: { syncProvider: "none", calendlyUrl: "" },
 };
@@ -171,6 +173,7 @@ export function normalizeOrgSettings(raw: unknown, base: OrgSettings = DEFAULT_O
       replyAlerts: bool(notif.replyAlerts, base.notifications.replyAlerts),
       appointmentAlerts: bool(notif.appointmentAlerts, base.notifications.appointmentAlerts),
       crmConnectionAlerts: bool(notif.crmConnectionAlerts, base.notifications.crmConnectionAlerts),
+      calendarConnectionAlerts: bool(notif.calendarConnectionAlerts, base.notifications.calendarConnectionAlerts),
       customDomainAlerts: bool(notif.customDomainAlerts, base.notifications.customDomainAlerts),
       weeklyDigest: bool(notif.weeklyDigest, base.notifications.weeklyDigest),
       planChangeReminders: bool(notif.planChangeReminders, base.notifications.planChangeReminders),

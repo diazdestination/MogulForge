@@ -210,6 +210,7 @@ export function RescueSettingsPanel({ orgId, canManage }: { orgId: string; canMa
             ["replyAlerts", "Reply alerts", "When a customer replies to a campaign message"],
             ["appointmentAlerts", "Appointment alerts", "When an appointment is booked or changes"],
             ["crmConnectionAlerts", "CRM connection alerts", "When a CRM connection stops working and lead delivery pauses"],
+            ["calendarConnectionAlerts", "Calendar connection alerts", "When your connected Google or Outlook account stops syncing and needs a reconnect"],
             ["customDomainAlerts", "Custom domain alerts", "When your custom domain stops resolving and visitors may be unable to reach your portal"],
             ["weeklyDigest", "Weekly digest", "A summary of pipeline movement every Monday"],
             ["planChangeReminders", "Plan change reminders", "A heads-up a few days before a scheduled downgrade takes effect"],
