@@ -32,6 +32,20 @@ export async function recordBotTrapHit(reason: BotTrapReason): Promise<void> {
   }
 }
 
+/** Number of days to keep bot-trap hits before purging. Only the last 8 days
+ *  are ever queried (readBotTrapStats), so 30 days gives ample safety margin. */
+export const BOT_TRAP_RETENTION_DAYS = 30;
+
+/** Deletes bot_trap_hits rows older than the retention window. */
+export async function cleanupOldBotTrapHits(): Promise<{ deleted: number }> {
+  await ensureTable();
+  const result = await getPool().query(
+    `DELETE FROM bot_trap_hits WHERE created_at < now() - make_interval(days => $1)`,
+    [BOT_TRAP_RETENTION_DAYS],
+  );
+  return { deleted: result.rowCount ?? 0 };
+}
+
 /** Trap-hit stats for the admin status card. */
 export async function readBotTrapStats(): Promise<BotTrapStats> {
   await ensureTable();
