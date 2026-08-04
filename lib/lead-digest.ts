@@ -1,5 +1,6 @@
 import "server-only";
 import { getPool } from "@/lib/db";
+import { isSenderRejection } from "@/lib/lead-emails-core";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -52,20 +53,35 @@ function digestHtml(leads: LeadRow[], since: Date) {
   </div>`;
 }
 
+const DEFAULT_FROM = "MogulForge Leads <onboarding@resend.dev>";
+
 async function sendViaResend(subject: string, html: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.LEAD_DIGEST_TO;
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
   if (!to) throw new Error("LEAD_DIGEST_TO is not configured");
-  const from = process.env.LEAD_DIGEST_FROM ?? "MogulForge Leads <onboarding@resend.dev>";
+  const from = process.env.LEAD_DIGEST_FROM ?? DEFAULT_FROM;
   const replyTo = process.env.LEAD_DIGEST_REPLY_TO ?? "diazdestination@gmail.com";
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, html, reply_to: replyTo }),
-  });
+  const post = (fromAddress: string) =>
+    fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: fromAddress, to, subject, html, reply_to: replyTo }),
+    });
+  let response = await post(from);
   if (!response.ok) {
     const body = await response.text().catch(() => "");
+    // Branded sender rejected (e.g. custom domain not verified yet): fall back
+    // to the known-good default sender so the digest still goes out.
+    if (from !== DEFAULT_FROM && isSenderRejection(response.status, body)) {
+      console.error(
+        `Resend rejected branded sender "${from}" (${response.status}: ${body}); falling back to ${DEFAULT_FROM}`,
+      );
+      response = await post(DEFAULT_FROM);
+      if (response.ok) return;
+      const fallbackBody = await response.text().catch(() => "");
+      throw new Error(`Resend API error ${response.status}: ${fallbackBody}`);
+    }
     throw new Error(`Resend API error ${response.status}: ${body}`);
   }
 }

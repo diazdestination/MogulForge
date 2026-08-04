@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sendLeadEmailsCore, hotLeadThreshold } from "../lib/lead-emails-core.ts";
+import { sendLeadEmailsCore, hotLeadThreshold, isSenderRejection } from "../lib/lead-emails-core.ts";
 
 const LEAD = {
   reportId: "11111111-1111-4111-8111-111111111111",
@@ -112,6 +112,41 @@ test("fetch throwing (e.g. timeout abort) never propagates", async () => {
   };
   await sendLeadEmailsCore(LEAD, { query: store.query, fetchFn: throwingFetch, env: ENV, siteUrl: "https://x.test" });
   assert.equal(store.state.prospect_email_sent_at, null); // claim released for retry
+});
+
+test("branded sender rejected (domain not verified) falls back to default sender", async () => {
+  const stub = makeFetch();
+  const sent = [];
+  const fetchFn = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.from.includes("mogulforge.com")) {
+      return { ok: false, status: 403, text: async () => "The mogulforge.com domain is not verified" };
+    }
+    sent.push(body);
+    return { ok: true, status: 200, text: async () => "" };
+  };
+  const store = makeStore();
+  const env = { ...ENV, LEAD_DIGEST_FROM: "MogulForge <hello@mogulforge.com>" };
+  await sendLeadEmailsCore(LEAD, { query: store.query, fetchFn, env, siteUrl: "https://x.test" });
+  assert.equal(sent.length, 2); // prospect + hot alert, both via fallback sender
+  assert.match(sent[0].from, /onboarding@resend\.dev/);
+  void stub;
+});
+
+test("branded sender used as-is once the domain is verified", async () => {
+  const stub = makeFetch();
+  const env = { ...ENV, LEAD_DIGEST_FROM: "MogulForge <hello@mogulforge.com>" };
+  await sendLeadEmailsCore(LEAD, deps(makeStore(), stub, env));
+  assert.equal(stub.sent.length, 2);
+  assert.equal(stub.sent[0].from, "MogulForge <hello@mogulforge.com>");
+  assert.equal(stub.sent[1].from, "MogulForge <hello@mogulforge.com>");
+});
+
+test("isSenderRejection: 403 or from/domain 422s only — 500s stay transient", () => {
+  assert.equal(isSenderRejection(403, "domain is not verified"), true);
+  assert.equal(isSenderRejection(422, "Invalid `from` field"), true);
+  assert.equal(isSenderRejection(422, "html too large"), false);
+  assert.equal(isSenderRejection(500, "boom"), false);
 });
 
 test("DB claim failure is swallowed — scan response path never breaks", async () => {

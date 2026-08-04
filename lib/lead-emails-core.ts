@@ -56,25 +56,49 @@ function hostOf(url: string): string {
   }
 }
 
+const DEFAULT_FROM = "MogulForge <onboarding@resend.dev>";
+
+/**
+ * True when a Resend rejection means the sender identity itself is invalid
+ * (custom domain not verified yet / from address not allowed) rather than a
+ * transient provider problem.
+ */
+export function isSenderRejection(status: number, body: string): boolean {
+  return status === 403 || (status === 422 && /domain|from/i.test(body));
+}
+
 async function sendViaResend(
   deps: LeadEmailDeps,
   { to, subject, html }: { to: string; subject: string; html: string },
 ) {
   const apiKey = deps.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
-  const from = deps.env.LEAD_DIGEST_FROM ?? "MogulForge <onboarding@resend.dev>";
+  const from = deps.env.LEAD_DIGEST_FROM ?? DEFAULT_FROM;
   // No hardcoded fallback: replies go to the from address unless the business
   // explicitly configures LEAD_DIGEST_REPLY_TO.
   const replyTo = deps.env.LEAD_DIGEST_REPLY_TO;
-  const response = await deps.fetchFn("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
-    // Strict timeout so a slow email provider can never stall the scan response.
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-  });
+  const post = (fromAddress: string) =>
+    deps.fetchFn("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: fromAddress, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
+      // Strict timeout so a slow email provider can never stall the scan response.
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+  let response = await post(from);
   if (!response.ok) {
     const body = await response.text().catch(() => "");
+    // Branded sender rejected (e.g. custom domain not verified yet): fall back
+    // to the known-good default sender so the lead email still goes out.
+    if (from !== DEFAULT_FROM && isSenderRejection(response.status, body)) {
+      console.error(
+        `Resend rejected branded sender "${from}" (${response.status}: ${body}); falling back to ${DEFAULT_FROM}`,
+      );
+      response = await post(DEFAULT_FROM);
+      if (response.ok) return;
+      const fallbackBody = await response.text().catch(() => "");
+      throw new Error(`Resend API error ${response.status}: ${fallbackBody}`);
+    }
     throw new Error(`Resend API error ${response.status}: ${body}`);
   }
 }

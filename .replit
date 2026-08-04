@@ -39,3 +39,9 @@ channel = "stable-25_05"
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 180000
+
+[userenv]
+
+[userenv.shared]
+LEAD_DIGEST_FROM = "Adam Diaz <adam@serenitycustompools.com>"
+LEAD_DIGEST_REPLY_TO = "adam@serenitycustompools.com"
