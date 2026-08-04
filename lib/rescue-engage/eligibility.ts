@@ -3,6 +3,7 @@ import { getPool } from "../db";
 import { mapLeadFacts, type LeadForAnalysis } from "../rescue-analysis/store";
 import { buildTemplateDraft } from "../rescue-analysis/message-content.ts";
 import type { AudienceFilters, CampaignChannel, CampaignTone } from "./campaign-schema.ts";
+import { interpolateBookingLink } from "./booking-link.ts";
 
 /**
  * Campaign audience computation with full exclusion accounting. The same
@@ -138,20 +139,29 @@ export type SampleMessage = {
 /** Deterministic sample messages for the preview — built from stored facts only, via the template engine. */
 export function buildSampleMessages(
   sampleLeads: LeadForAnalysis[],
-  opts: { channel: CampaignChannel; tone: CampaignTone; objective: string | null; orgName: string },
+  opts: {
+    channel: CampaignChannel;
+    tone: CampaignTone;
+    objective: string | null;
+    orgName: string;
+    /** Resolves the booking URL for a given lead (per-lead /book token). Optional for callers without booking context. */
+    resolveBookingLinkFor?: (leadId: string) => string;
+  },
 ): SampleMessage[] {
   return sampleLeads.map((lead) => {
+    const bookingLink = opts.resolveBookingLinkFor?.(lead.id) ?? "";
     const content = buildTemplateDraft(opts.channel, lead, {
       orgName: opts.orgName,
       tone: opts.tone,
       objective: opts.objective ?? undefined,
       includeOptOutLanguage: true,
+      bookingLink: bookingLink || undefined,
     });
     return {
       leadId: lead.id,
       leadName: [lead.firstName, lead.lastName].filter(Boolean).join(" ") || "Unnamed lead",
-      subject: typeof content.subject === "string" ? content.subject : null,
-      body: String(content.body ?? ""),
+      subject: typeof content.subject === "string" ? interpolateBookingLink(content.subject, bookingLink) : null,
+      body: interpolateBookingLink(String(content.body ?? ""), bookingLink),
     };
   });
 }

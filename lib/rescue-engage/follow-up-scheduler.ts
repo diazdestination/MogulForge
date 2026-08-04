@@ -5,6 +5,8 @@ import { buildTemplateDraft } from "../rescue-analysis/message-content.ts";
 import { mapLeadFacts, LEAD_FACT_COLUMNS } from "../rescue-analysis/store";
 import { recordUsage, requireActionCapacity } from "../usage";
 import { hourInTimeZone, type CampaignTone } from "./campaign-schema.ts";
+import { interpolateBookingLink, publicBaseUrl, resolveBookingLink } from "./booking-link.ts";
+import { getOrgSettings } from "../org-settings";
 import {
   insertMessage,
   logActivity,
@@ -65,7 +67,7 @@ export async function runFollowUpPass(now: Date = new Date()): Promise<FollowUpP
   }
 
   const { rows } = await getPool().query(
-    `SELECT c.organization_id, c.id, c.name, c.channel, c.tone, c.objective, c.schedule,
+    `SELECT c.organization_id, c.id, c.name, c.channel, c.tone, c.objective, c.booking_link, c.schedule,
        c.follow_up_delay_days, c.max_attempts, c.stop_conditions, c.mode, c.status,
        o.timezone AS org_timezone
      FROM rescue_campaigns c
@@ -98,6 +100,7 @@ export async function runFollowUpPass(now: Date = new Date()): Promise<FollowUpP
         channel: row.channel,
         tone: row.tone,
         objective: row.objective,
+        bookingLink: row.booking_link,
         followUpDelayDays: row.follow_up_delay_days,
         maxAttempts: row.max_attempts,
         stopConditions: Array.isArray(row.stop_conditions) ? row.stop_conditions : [],
@@ -121,6 +124,7 @@ async function runCampaignFollowUps(
     channel: "sms" | "email";
     tone: string;
     objective: string | null;
+    bookingLink: string | null;
     followUpDelayDays: number;
     maxAttempts: number;
     stopConditions: string[];
@@ -165,6 +169,8 @@ async function runCampaignFollowUps(
     await requireActionCapacity(campaign.organizationId, { [sendMetric]: sendable.length });
   }
 
+  const settings = await getOrgSettings(campaign.organizationId);
+  const baseUrl = publicBaseUrl();
   const branding = await getEffectiveBranding(campaign.organizationId);
   const orgName = (campaign.channel === "sms" ? branding?.smsSenderName : branding?.emailSenderName) ?? branding?.displayName ?? "Our team";
 
@@ -189,6 +195,14 @@ async function runCampaignFollowUps(
     if (!hasContact) continue;
 
     const attemptNumber = Number(row.attempts) + 1;
+    const bookingLink = resolveBookingLink({
+      organizationId: campaign.organizationId,
+      leadId: lead.id,
+      campaignBookingLink: campaign.bookingLink,
+      defaultBookingLink: settings.messaging.defaultBookingLink,
+      calendlyUrl: settings.calendar.calendlyUrl,
+      baseUrl,
+    });
     const content = buildTemplateDraft(campaign.channel, lead, {
       orgName,
       tone: campaign.tone as CampaignTone,
@@ -196,6 +210,7 @@ async function runCampaignFollowUps(
       includeOptOutLanguage: true,
       attemptNumber,
       isFinalAttempt: attemptNumber >= campaign.maxAttempts,
+      bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
     });
     await insertMessage({
       organizationId: campaign.organizationId,
@@ -203,8 +218,8 @@ async function runCampaignFollowUps(
       campaignId: campaign.campaignId,
       direction: "outbound",
       channel: campaign.channel,
-      subject: typeof content.subject === "string" ? content.subject : null,
-      body: String(content.body ?? ""),
+      subject: typeof content.subject === "string" ? interpolateBookingLink(content.subject, bookingLink) : null,
+      body: interpolateBookingLink(String(content.body ?? ""), bookingLink),
       status: "simulated",
       simulated: true,
       provider: "simulation",

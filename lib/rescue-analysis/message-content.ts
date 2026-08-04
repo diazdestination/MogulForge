@@ -127,6 +127,12 @@ export type TemplateOptions = {
   attemptNumber?: number;
   /** True when this is the last planned touch — uses "closing the file" framing. */
   isFinalAttempt?: boolean;
+  /**
+   * Fully-resolved booking URL for this recipient (already interpolated —
+   * never a raw placeholder). When present, SMS and email drafts include a
+   * booking call-to-action line.
+   */
+  bookingLink?: string;
 };
 
 function greetName(facts: LeadFacts): string {
@@ -184,7 +190,8 @@ export function buildTemplateDraft(type: MessageType, facts: LeadFacts, opts: Te
             : variant === "nudge"
               ? [`Hi ${name}, ${opts.orgName} circling back on ${project}.`, "Timing shifts all the time — want us to keep it on our radar, or has anything changed?"]
               : [`Hi ${name}, this is ${opts.orgName}.`, followLine, "Is this still something you're considering?"];
-      const body = [...core, opts.includeOptOutLanguage ? SMS_OPT_OUT : null].filter(Boolean).join(" ");
+      const booking = opts.bookingLink?.trim() ? `Grab a time that works for you: ${opts.bookingLink.trim()}` : null;
+      const body = [...core, booking, opts.includeOptOutLanguage ? SMS_OPT_OUT : null].filter(Boolean).join(" ");
       return parseMessageContent("sms", { body });
     }
     case "email": {
@@ -218,6 +225,7 @@ export function buildTemplateDraft(type: MessageType, facts: LeadFacts, opts: Te
         variant === "closing" ? null : urgencyLine(opts.tone),
         "",
         closerLine,
+        opts.bookingLink?.trim() ? `\nWhen you're ready, you can book a time directly here: ${opts.bookingLink.trim()}` : null,
         "",
         `— The ${opts.orgName} team`,
         opts.includeOptOutLanguage ? `\n${EMAIL_OPT_OUT}` : null,

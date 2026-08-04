@@ -5,6 +5,8 @@ import { mapLeadFacts, LEAD_FACT_COLUMNS } from "../rescue-analysis/store";
 import { hourInTimeZone, isWithinQuietHours, type CampaignTone } from "./campaign-schema.ts";
 import { getProviderStatus, providerName, sendLiveMessage, ProviderSendError } from "./providers.ts";
 import { computeAudience } from "./eligibility.ts";
+import { interpolateBookingLink, publicBaseUrl, resolveBookingLink } from "./booking-link.ts";
+import { getOrgSettings } from "../org-settings";
 import {
   enrollCampaignLeads,
   getCampaign,
@@ -152,6 +154,8 @@ export async function runLiveSends(
   );
   const provider = providerName(campaign.channel);
   const statusCallbackUrl = campaign.channel === "sms" ? twilioStatusCallbackUrl() : null;
+  const settings = await getOrgSettings(organizationId);
+  const baseUrl = publicBaseUrl();
   let liveSends = 0;
   let failedSends = 0;
   let skippedNoContact = 0;
@@ -167,14 +171,27 @@ export async function runLiveSends(
       skippedNoConsent += 1;
       continue;
     }
+    // Per-lead booking URL: the /book/<token> link is minted with this lead's
+    // id so a booking is attributable, falling back to the org's saved
+    // default booking link / Calendly URL. See booking-link.ts.
+    const bookingLink = resolveBookingLink({
+      organizationId,
+      leadId: lead.id,
+      campaignBookingLink: campaign.bookingLink,
+      defaultBookingLink: settings.messaging.defaultBookingLink,
+      calendlyUrl: settings.calendar.calendlyUrl,
+      baseUrl,
+    });
     const content = buildTemplateDraft(campaign.channel, lead, {
       orgName,
       tone: campaign.tone as CampaignTone,
       objective: campaign.objective ?? undefined,
       includeOptOutLanguage: true,
+      bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
     });
-    const subject = typeof content.subject === "string" ? content.subject : null;
-    const body = String(content.body ?? "");
+    const rawSubject = typeof content.subject === "string" ? content.subject : null;
+    const subject = rawSubject === null ? null : interpolateBookingLink(rawSubject, bookingLink);
+    const body = interpolateBookingLink(String(content.body ?? ""), bookingLink);
     const message = await insertMessage({
       organizationId,
       leadId: lead.id,
@@ -255,6 +272,8 @@ export async function runSimulatedSends(
      LIMIT $3`,
     [organizationId, campaign.id, SEND_BATCH_LIMIT],
   );
+  const settings = await getOrgSettings(organizationId);
+  const baseUrl = publicBaseUrl();
   let simulatedSends = 0;
   let skippedNoContact = 0;
   for (const row of rows) {
@@ -264,20 +283,30 @@ export async function runSimulatedSends(
       skippedNoContact += 1;
       continue;
     }
+    const bookingLink = resolveBookingLink({
+      organizationId,
+      leadId: lead.id,
+      campaignBookingLink: campaign.bookingLink,
+      defaultBookingLink: settings.messaging.defaultBookingLink,
+      calendlyUrl: settings.calendar.calendlyUrl,
+      baseUrl,
+    });
     const content = buildTemplateDraft(campaign.channel, lead, {
       orgName,
       tone: campaign.tone as CampaignTone,
       objective: campaign.objective ?? undefined,
       includeOptOutLanguage: true,
+      bookingLink: campaign.bookingLink?.trim() ? bookingLink : undefined,
     });
+    const rawSubject = typeof content.subject === "string" ? content.subject : null;
     await insertMessage({
       organizationId,
       leadId: lead.id,
       campaignId: campaign.id,
       direction: "outbound",
       channel: campaign.channel,
-      subject: typeof content.subject === "string" ? content.subject : null,
-      body: String(content.body ?? ""),
+      subject: rawSubject === null ? null : interpolateBookingLink(rawSubject, bookingLink),
+      body: interpolateBookingLink(String(content.body ?? ""), bookingLink),
       status: "simulated",
       simulated: true,
       provider: "simulation",

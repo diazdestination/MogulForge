@@ -151,9 +151,25 @@ export function RescueCampaignsPanel({ orgId }: { orgId: string }) {
             <label className="block text-xs text-white/55">Sender name
               <input value={building.senderIdentity} onChange={(e) => setBuilding({ ...building, senderIdentity: e.target.value })} className={`${input} mt-1 w-full`} placeholder="Who messages come from" />
             </label>
-            <label className="block text-xs text-white/55">Booking link
+            <div className="block text-xs text-white/55">
+              <div className="flex items-center justify-between">
+                <span>Booking link</span>
+                <button
+                  type="button"
+                  onClick={() => setBuilding({ ...building, bookingLink: "{{booking_link}}" })}
+                  className="rounded border border-forge-lime/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-forge-lime transition hover:bg-forge-lime/10"
+                  title="Use your booking page — resolved per lead at send time"
+                >
+                  Insert booking link
+                </button>
+              </div>
               <input value={building.bookingLink} onChange={(e) => setBuilding({ ...building, bookingLink: e.target.value })} className={`${input} mt-1 w-full`} placeholder="https://calendly.com/…" />
-            </label>
+              <p className="mt-1 text-[10px] text-white/40">
+                {building.bookingLink.trim().toLowerCase() === "{{booking_link}}"
+                  ? "Messages will include your booking page, minted per lead at send time (falls back to your saved Calendly link)."
+                  : "Paste a URL, or click Insert booking link to auto-resolve your booking page per lead at send time."}
+              </p>
+            </div>
             <label className="block text-xs text-white/55 md:col-span-2">Objective
               <input value={building.objective} onChange={(e) => setBuilding({ ...building, objective: e.target.value })} className={`${input} mt-1 w-full`} placeholder="What should this campaign accomplish?" />
             </label>

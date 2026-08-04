@@ -3,6 +3,8 @@ import { ApiError, guard, requireEntitlement, requireMember } from "@/lib/api-gu
 import { buildSampleMessages, computeAudience } from "@/lib/rescue-engage/eligibility";
 import { getProviderStatus } from "@/lib/rescue-engage/providers";
 import { getCampaign } from "@/lib/rescue-engage/store";
+import { publicBaseUrl, resolveBookingLink } from "@/lib/rescue-engage/booking-link";
+import { getOrgSettings } from "@/lib/org-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,11 +23,26 @@ export const GET = guard(async (_request: Request, { params }: Ctx) => {
   const campaign = await getCampaign(org.id, campaignId);
   if (!campaign) throw new ApiError(404, "Campaign not found.");
   const preview = await computeAudience(org.id, campaign.id, campaign.channel, campaign.audience);
+  // Mirror the send engine: sample messages include the resolved per-lead
+  // booking link when the campaign has a booking link configured.
+  const settings = await getOrgSettings(org.id);
+  const baseUrl = publicBaseUrl();
   const samples = buildSampleMessages(preview.sampleLeads, {
     channel: campaign.channel,
     tone: campaign.tone as "professional" | "friendly" | "urgent",
     objective: campaign.objective,
     orgName: org.name,
+    resolveBookingLinkFor: campaign.bookingLink?.trim()
+      ? (leadId) =>
+          resolveBookingLink({
+            organizationId: org.id,
+            leadId,
+            campaignBookingLink: campaign.bookingLink,
+            defaultBookingLink: settings.messaging.defaultBookingLink,
+            calendlyUrl: settings.calendar.calendlyUrl,
+            baseUrl,
+          })
+      : undefined,
   });
   return NextResponse.json({
     accounting: preview.accounting,
