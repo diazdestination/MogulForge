@@ -171,7 +171,8 @@ export function nextUsagePeriodStart(now: Date = new Date()): Date {
 export async function schedulePendingPlanChange(organizationId: string, planId: string, effectiveAt: Date): Promise<OrgSubscription> {
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions
-     SET pending_plan_id = $2, pending_plan_effective_at = $3, pending_plan_reminder_sent_at = NULL, updated_at = now()
+     SET pending_plan_id = $2, pending_plan_effective_at = $3, pending_plan_reminder_sent_at = NULL,
+         pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL, updated_at = now()
      WHERE organization_id = $1
      RETURNING *`,
     [organizationId, planId, effectiveAt.toISOString()],
@@ -184,7 +185,8 @@ export async function schedulePendingPlanChange(organizationId: string, planId: 
 export async function clearPendingPlanChange(organizationId: string): Promise<OrgSubscription | null> {
   const { rows } = await getPool().query(
     `UPDATE org_subscriptions
-     SET pending_plan_id = NULL, pending_plan_effective_at = NULL, pending_plan_reminder_sent_at = NULL, updated_at = now()
+     SET pending_plan_id = NULL, pending_plan_effective_at = NULL, pending_plan_reminder_sent_at = NULL,
+         pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL, updated_at = now()
      WHERE organization_id = $1 AND pending_plan_id IS NOT NULL
      RETURNING *`,
     [organizationId],
@@ -282,6 +284,7 @@ export async function applyDuePendingPlanChanges(now: Date = new Date(), organiz
         `UPDATE org_subscriptions
          SET plan_id = pending_plan_id, pending_plan_id = NULL, pending_plan_effective_at = NULL,
              pending_plan_reminder_sent_at = NULL,
+             pending_plan_failed_attempts = 0, pending_plan_failure_alerted_at = NULL,
              billing_ref = COALESCE($2, billing_ref), updated_at = now()
          WHERE organization_id = $1`,
         [change.organizationId, result.providerRef],
@@ -319,10 +322,80 @@ export async function applyDuePendingPlanChanges(now: Date = new Date(), organiz
       targetId: failedOrgId,
       metadata,
     });
+    await escalateRepeatedPlanChangeFailure(failedOrgId, metadata).catch((error) => {
+      console.error("Plan change failure escalation errored for", failedOrgId, error);
+    });
   }
   return applied;
 }
 
+/**
+ * Counts consecutive failed apply passes for an org's pending change and,
+ * once the threshold is hit, alerts platform admins exactly once: the
+ * pending_plan_failure_alerted_at claim is taken atomically before sending,
+ * and released if delivery throws so the next pass retries the alert. The
+ * counter and claim reset whenever the change is (re)scheduled, cancelled,
+ * or finally applied.
+ */
+async function escalateRepeatedPlanChangeFailure(organizationId: string, metadata: Record<string, unknown>): Promise<void> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE org_subscriptions
+     SET pending_plan_failed_attempts = pending_plan_failed_attempts + 1, updated_at = now()
+     WHERE organization_id = $1 AND pending_plan_id IS NOT NULL
+     RETURNING pending_plan_failed_attempts, pending_plan_failure_alerted_at, plan_id, pending_plan_id, pending_plan_effective_at`,
+    [organizationId],
+  );
+  const row = rows[0];
+  if (!row) return; // change was cancelled/applied meanwhile
+
+  const { PLAN_CHANGE_FAILURE_ALERT_THRESHOLD, sendPlanChangeFailureAlert } = await import("./plan-change-alerts");
+  const attempts = Number(row.pending_plan_failed_attempts);
+  if (attempts < PLAN_CHANGE_FAILURE_ALERT_THRESHOLD || row.pending_plan_failure_alerted_at) return;
+
+  // Claim the one-time alert atomically so concurrent passes never double-send.
+  const claim = await pool.query(
+    `UPDATE org_subscriptions
+     SET pending_plan_failure_alerted_at = now()
+     WHERE organization_id = $1 AND pending_plan_id IS NOT NULL AND pending_plan_failure_alerted_at IS NULL
+     RETURNING organization_id`,
+    [organizationId],
+  );
+  if (claim.rowCount === 0) return;
+
+  const { rows: orgRows } = await pool.query("SELECT name FROM organizations WHERE id = $1", [organizationId]);
+  const alert = {
+    organizationId,
+    organizationName: orgRows[0]?.name ?? organizationId,
+    fromPlanId: row.plan_id,
+    toPlanId: row.pending_plan_id,
+    effectiveAt: new Date(row.pending_plan_effective_at).toISOString(),
+    billingProvider: String(metadata.billingProvider ?? "unknown"),
+    billingNote: String(metadata.billingNote ?? ""),
+    failedAttempts: attempts,
+  };
+  try {
+    const result = await sendPlanChangeFailureAlert(alert);
+    const { logAudit } = await import("./audit");
+    await logAudit({
+      organizationId,
+      actorLabel: "system",
+      action: result.sent ? "subscription.scheduled_change_failure_alerted" : "subscription.scheduled_change_failure_alert_skipped",
+      targetType: "org_subscription",
+      targetId: organizationId,
+      metadata: { ...alert, ...(result.reason ? { reason: result.reason } : {}) },
+    });
+  } catch (error) {
+    // Delivery failure: release the claim so the next failed pass retries the alert.
+    await pool
+      .query(
+        "UPDATE org_subscriptions SET pending_plan_failure_alerted_at = NULL WHERE organization_id = $1 AND pending_plan_id IS NOT NULL",
+        [organizationId],
+      )
+      .catch(() => {});
+    throw error;
+  }
+}
 const REMINDER_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
 
 export type PlanChangeReminderOutcome = { organizationId: string; status: "sent" | "skipped"; reason?: string };
@@ -496,3 +569,34 @@ export async function getCommercialState(organizationId: string, now: Date = new
     hasSubscriptionRow,
   };
 }
+
+/** Orgs whose scheduled plan change has failed at least one apply pass (admin console). */
+export async function listFailingPlanChanges(): Promise<FailingPlanChange[]> {
+  const { rows } = await getPool().query(
+    `SELECT s.organization_id, o.name AS organization_name, s.plan_id, s.pending_plan_id,
+            s.pending_plan_effective_at, s.pending_plan_failed_attempts, s.pending_plan_failure_alerted_at
+     FROM org_subscriptions s
+     JOIN organizations o ON o.id = s.organization_id
+     WHERE s.pending_plan_id IS NOT NULL AND s.pending_plan_failed_attempts > 0
+     ORDER BY s.pending_plan_failed_attempts DESC, s.pending_plan_effective_at ASC`,
+  );
+  return rows.map((row) => ({
+    organizationId: row.organization_id,
+    organizationName: row.organization_name,
+    planId: row.plan_id,
+    pendingPlanId: row.pending_plan_id,
+    effectiveAt: new Date(row.pending_plan_effective_at).toISOString(),
+    failedAttempts: Number(row.pending_plan_failed_attempts),
+    alertedAt: row.pending_plan_failure_alerted_at ? new Date(row.pending_plan_failure_alerted_at).toISOString() : null,
+  }));
+}
+
+export type FailingPlanChange = {
+  organizationId: string;
+  organizationName: string;
+  planId: string;
+  pendingPlanId: string;
+  effectiveAt: string;
+  failedAttempts: number;
+  alertedAt: string | null;
+};

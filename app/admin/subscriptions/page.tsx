@@ -3,7 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/admin-auth";
 import { getCurrentUser } from "@/lib/auth";
-import { listPlanDefinitions, upsertPlanDefinition } from "@/lib/subscriptions";
+import { listFailingPlanChanges, listPlanDefinitions, upsertPlanDefinition } from "@/lib/subscriptions";
+import { PLAN_CHANGE_FAILURE_ALERT_THRESHOLD } from "@/lib/plan-change-alerts";
 import { getBillingAdapter } from "@/lib/billing";
 import { USAGE_METRIC_LABELS, isUsageMetric, type LimitSet } from "@/lib/usage-metrics";
 import { logAudit } from "@/lib/audit";
@@ -64,7 +65,7 @@ async function savePlanAction(formData: FormData) {
 
 export default async function AdminSubscriptionsPage() {
   if (!(await isPlatformAdmin())) redirect("/admin/login?next=/admin/subscriptions");
-  const plans = await listPlanDefinitions();
+  const [plans, failingChanges] = await Promise.all([listPlanDefinitions(), listFailingPlanChanges()]);
   const adapter = getBillingAdapter(process.env.BILLING_PROVIDER);
   const inputClass = "w-full rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-sm outline-none focus:border-forge-lime/50";
   const labelClass = "block text-xs font-bold uppercase tracking-wider text-white/50";
@@ -82,6 +83,25 @@ export default async function AdminSubscriptionsPage() {
         </div>
         <Link href="/admin/usage" className="btn-secondary">Usage console</Link>
       </div>
+
+      {failingChanges.length > 0 && <div className="mt-6 rounded-xl border border-red-400/40 bg-red-500/[.06] px-5 py-4">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-red-300">Scheduled plan changes failing at the provider</h2>
+        <p className="mt-1 text-xs text-white/50">
+          These pending changes are past due but the billing provider keeps rejecting them, so the org stays on its old plan.
+          Admins are emailed after {PLAN_CHANGE_FAILURE_ALERT_THRESHOLD} consecutive failed passes; the change keeps retrying automatically.
+        </p>
+        <ul className="mt-3 space-y-2 text-sm">
+          {failingChanges.map((change) => <li key={change.organizationId} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link href={`/admin/organizations/${change.organizationId}`} className="font-bold text-white hover:underline">{change.organizationName}</Link>
+            <span className="text-white/60">{change.planId} &rarr; {change.pendingPlanId}</span>
+            <span className="text-white/40">due {new Date(change.effectiveAt).toUTCString()}</span>
+            <span className="rounded-full border border-red-400/40 px-2 py-0.5 text-xs font-bold text-red-300">
+              {change.failedAttempts} failed {change.failedAttempts === 1 ? "attempt" : "attempts"}
+            </span>
+            {change.alertedAt && <span className="text-xs text-white/40">admins alerted {new Date(change.alertedAt).toUTCString()}</span>}
+          </li>)}
+        </ul>
+      </div>}
 
       <div className="mt-6 rounded-xl border border-white/10 bg-white/[.02] px-5 py-4 text-sm text-white/60">
         <span className="font-bold text-white/80">Billing adapter:</span> {adapter.provider} — {adapter.description}{" "}
