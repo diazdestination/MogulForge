@@ -102,8 +102,11 @@ export async function intakeLead(organizationId: string, input: LeadIntakeInput)
     dupConditions.push(`email_normalized = $${dupParams.length}`);
   }
   if (phoneNormalized) {
-    dupParams.push(phoneNormalized);
-    dupConditions.push(`phone_normalized = $${dupParams.length}`);
+    // Match on the last 10 digits so "+1 555 644 9001" (normalized
+    // "15556449001") still finds a lead stored as "5556449001" — the same
+    // US number with and without a country code.
+    dupParams.push(phoneNormalized.slice(-10));
+    dupConditions.push(`RIGHT(phone_normalized, 10) = $${dupParams.length}`);
   }
   const dup = await pool.query(
     `SELECT id FROM rescue_leads WHERE organization_id = $1 AND (${dupConditions.join(" OR ")}) LIMIT 1`,
@@ -112,10 +115,15 @@ export async function intakeLead(organizationId: string, input: LeadIntakeInput)
   if (dup.rows[0]) return { outcome: "duplicate", leadId: String(dup.rows[0].id) };
 
   // Suppression check against the org's do-not-contact list.
+  // Phone comparison uses the last 10 digits so "+1 555 644 9001" matches a
+  // suppressed record stored as "5556449001" (country-code tolerance).
   const suppressed = await pool.query(
     `SELECT reason FROM suppression_records
-     WHERE organization_id = $1 AND ((channel = 'email' AND value = $2) OR (channel = 'phone' AND value = $3)) LIMIT 1`,
-    [organizationId, emailNormalized ?? "", phoneNormalized ?? ""],
+     WHERE organization_id = $1 AND (
+       (channel = 'email' AND value = $2)
+       OR (channel = 'phone' AND RIGHT(value, 10) = $3)
+     ) LIMIT 1`,
+    [organizationId, emailNormalized ?? "", phoneNormalized ? phoneNormalized.slice(-10) : ""],
   );
   const suppressionReason = suppressed.rows[0] ? String(suppressed.rows[0].reason ?? "suppression list") : null;
 
