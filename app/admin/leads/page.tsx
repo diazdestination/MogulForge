@@ -55,6 +55,13 @@ async function getLeads(status?: LeadStatus): Promise<Lead[]> {
   return rows;
 }
 
+async function getStatusCounts(): Promise<Record<string, number>> {
+  const { rows } = await getPool().query("SELECT status, count(*)::int AS count FROM visibility_reports GROUP BY status");
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.status] = row.count;
+  return counts;
+}
+
 const FILTERS = [
   { value: "", label: "All" },
   { value: "new", label: "New" },
@@ -80,7 +87,8 @@ export default async function AdminLeadsPage({ searchParams }: { searchParams: P
 
   const { status: statusParam } = await searchParams;
   const activeStatus = (["new", "contacted", "dismissed"] as const).find((s) => s === statusParam);
-  const leads = await getLeads(activeStatus);
+  const [leads, statusCounts] = await Promise.all([getLeads(activeStatus), getStatusCounts()]);
+  const totalCount = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
   return <section className="shell py-16">
     <div className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -98,7 +106,7 @@ export default async function AdminLeadsPage({ searchParams }: { searchParams: P
         <span className="text-xs uppercase tracking-wider text-white/40">Filter:</span>
         {FILTERS.map((f) => {
           const isActive = (activeStatus ?? "") === f.value;
-          return <a key={f.value} href={f.value ? `/admin/leads?status=${f.value}` : "/admin/leads"} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${isActive ? "border-forge-lime/50 bg-forge-lime/10 text-forge-lime" : "border-white/10 text-white/50 hover:border-white/30 hover:text-white"}`} aria-current={isActive ? "page" : undefined}>{f.label}</a>;
+          return <a key={f.value} href={f.value ? `/admin/leads?status=${f.value}` : "/admin/leads"} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${isActive ? "border-forge-lime/50 bg-forge-lime/10 text-forge-lime" : "border-white/10 text-white/50 hover:border-white/30 hover:text-white"}`} aria-current={isActive ? "page" : undefined}>{f.label} ({f.value ? statusCounts[f.value] ?? 0 : totalCount})</a>;
         })}
       </div>
       <div className="mt-4 overflow-x-auto rounded-xl border border-white/10">
