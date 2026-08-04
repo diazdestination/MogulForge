@@ -37,7 +37,9 @@ export function VisibilityForm() {
     <div className="mt-7 flex flex-wrap gap-3 print:hidden">
       <button onClick={() => { setResult(null); setReportId(null); }} className="btn-secondary">Scan another site</button>
       {reportId && <button onClick={copyShareLink} className="btn-secondary">{copied ? "Link copied!" : "Copy share link"}</button>}
-      <button onClick={() => window.print()} className="btn-secondary">Download PDF</button>
+      {reportId
+        ? <a href={`/api/ai-visibility/${reportId}/pdf`} download className="btn-secondary">Download PDF</a>
+        : <button onClick={() => window.print()} className="btn-secondary">Download PDF</button>}
     </div>
   </div>;
 

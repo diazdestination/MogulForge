@@ -26,6 +26,7 @@ export default async function SharedReportPage({ params }: { params: Promise<{ i
         <p className="mt-6 text-xs text-white/35">Scanned {new Date(row.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })} by MogulForge AI Visibility Scan.</p>
       </div>
       <div className="mt-8 flex flex-wrap gap-3 print:hidden">
+        <a href={`/api/ai-visibility/${id}/pdf`} download className="btn-secondary">Download PDF</a>
         <Link href="/ai-visibility" className="btn-primary">Scan your own site</Link>
         <Link href="/contact" className="btn-secondary">Talk to MogulForge</Link>
       </div>
