@@ -28,6 +28,7 @@ const JOBS = [
   { name: "plan-changes", path: "/api/cron/plan-changes" },
   { name: "calendar-sync", path: "/api/cron/calendar-sync" },
   { name: "domain-health", path: "/api/cron/domain-health" },
+  { name: "log-cleanup", path: "/api/cron/log-cleanup" },
 ];
 
 let failures = 0;
