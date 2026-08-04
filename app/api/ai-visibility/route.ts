@@ -5,7 +5,8 @@ import { crawlSite } from "@/lib/visibility-crawler";
 import { scoreCategories, overallScore, fallbackReport } from "@/lib/visibility-score";
 import { getPool } from "@/lib/db";
 import { sendLeadEmails } from "@/lib/lead-emails";
-import { checkScanRequest, clientIpFromHeaders, getVisibilityLimiters } from "@/lib/visibility-guard";
+import { checkScanRequest, clientIpFromHeaders } from "@/lib/visibility-guard";
+import { getVisibilityLimiters } from "@/lib/visibility-guard-server";
 
 async function saveReport(url: string, email: string, report: VisibilityReport): Promise<string | null> {
   try {
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
 
   // Abuse protection: disposable-email rejection plus per-IP and per-email
   // throttling, before any crawl or OpenAI spend.
-  const verdict = checkScanRequest(getVisibilityLimiters(), {
+  const verdict = await checkScanRequest(getVisibilityLimiters(), {
     ip: clientIpFromHeaders(request.headers),
     email: parsed.data.email,
   });

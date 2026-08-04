@@ -7,7 +7,12 @@
  * so it stays unit-testable under node --test.
  */
 
-import { FixedWindowRateLimiter } from "./public-api/rate-limit.ts";
+import { FixedWindowRateLimiter, type RateLimitResult } from "./public-api/rate-limit.ts";
+
+/** Anything that can check a fixed-window quota — in-memory or DB-backed. */
+export type RateLimitChecker = {
+  check(key: string, now?: number): RateLimitResult | Promise<RateLimitResult>;
+};
 
 export type GuardVerdict =
   | { allowed: true }
@@ -82,38 +87,40 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 export type VisibilityLimiters = {
-  ip: FixedWindowRateLimiter;
-  email: FixedWindowRateLimiter;
+  ip: RateLimitChecker;
+  email: RateLimitChecker;
 };
 
-const WINDOW_MS = 10 * 60_000; // 10 minutes
+export const VISIBILITY_WINDOW_MS = 10 * 60_000; // 10 minutes
+const WINDOW_MS = VISIBILITY_WINDOW_MS;
 
-export function createVisibilityLimiters(env: Record<string, string | undefined> = process.env): VisibilityLimiters {
+export function visibilityLimits(env: Record<string, string | undefined> = process.env) {
   return {
-    // Generous for humans (a person rarely runs more than a few scans in
-    // 10 minutes) while capping what a single bot IP or email can burn.
-    ip: new FixedWindowRateLimiter(positiveInt(env.VISIBILITY_SCAN_IP_LIMIT, 5), WINDOW_MS),
-    email: new FixedWindowRateLimiter(positiveInt(env.VISIBILITY_SCAN_EMAIL_LIMIT, 3), WINDOW_MS),
+    ip: positiveInt(env.VISIBILITY_SCAN_IP_LIMIT, 5),
+    email: positiveInt(env.VISIBILITY_SCAN_EMAIL_LIMIT, 3),
   };
 }
 
-const globalState = globalThis as typeof globalThis & { __visibilityLimiters?: VisibilityLimiters };
-
-export function getVisibilityLimiters(): VisibilityLimiters {
-  globalState.__visibilityLimiters ??= createVisibilityLimiters();
-  return globalState.__visibilityLimiters;
+export function createVisibilityLimiters(env: Record<string, string | undefined> = process.env): VisibilityLimiters {
+  // Generous for humans (a person rarely runs more than a few scans in
+  // 10 minutes) while capping what a single bot IP or email can burn.
+  const limits = visibilityLimits(env);
+  return {
+    ip: new FixedWindowRateLimiter(limits.ip, WINDOW_MS),
+    email: new FixedWindowRateLimiter(limits.email, WINDOW_MS),
+  };
 }
 
 /**
  * Runs all abuse checks for a scan request. Order matters: junk email is a
  * hard reject (does not consume rate-limit quota framing), then IP throttle,
- * then per-email throttle.
+ * then per-email throttle. Async because limiters may be Postgres-backed.
  */
-export function checkScanRequest(
+export async function checkScanRequest(
   limiters: VisibilityLimiters,
   input: { ip: string; email: string },
   now = Date.now(),
-): GuardVerdict {
+): Promise<GuardVerdict> {
   if (isDisposableEmail(input.email)) {
     return {
       allowed: false,
@@ -122,7 +129,7 @@ export function checkScanRequest(
     };
   }
 
-  const ipResult = limiters.ip.check(`ip:${input.ip}`, now);
+  const ipResult = await limiters.ip.check(`ip:${input.ip}`, now);
   if (!ipResult.allowed) {
     return {
       allowed: false,
@@ -132,7 +139,7 @@ export function checkScanRequest(
     };
   }
 
-  const emailResult = limiters.email.check(`email:${input.email.trim().toLowerCase()}`, now);
+  const emailResult = await limiters.email.check(`email:${input.email.trim().toLowerCase()}`, now);
   if (!emailResult.allowed) {
     return {
       allowed: false,
