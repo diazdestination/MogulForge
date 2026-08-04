@@ -41,14 +41,28 @@ async function setStatusAction(formData: FormData) {
   revalidatePath("/admin/leads");
 }
 
-async function getLeads(): Promise<Lead[]> {
+async function getLeads(status?: LeadStatus): Promise<Lead[]> {
+  if (status) {
+    const { rows } = await getPool().query(
+      "SELECT id, url, email, score, created_at, status FROM visibility_reports WHERE status = $1 ORDER BY created_at DESC LIMIT 500",
+      [status],
+    );
+    return rows;
+  }
   const { rows } = await getPool().query(
     "SELECT id, url, email, score, created_at, status FROM visibility_reports ORDER BY created_at DESC LIMIT 500",
   );
   return rows;
 }
 
-export default async function AdminLeadsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+const FILTERS = [
+  { value: "", label: "All" },
+  { value: "new", label: "New" },
+  { value: "contacted", label: "Contacted" },
+  { value: "dismissed", label: "Dismissed" },
+] as const;
+
+export default async function AdminLeadsPage({ searchParams }: { searchParams: Promise<{ error?: string; status?: string }> }) {
   if (!(await isAdmin())) {
     const { error } = await searchParams;
     return <section className="shell py-24">
@@ -64,7 +78,9 @@ export default async function AdminLeadsPage({ searchParams }: { searchParams: P
     </section>;
   }
 
-  const leads = await getLeads();
+  const { status: statusParam } = await searchParams;
+  const activeStatus = (["new", "contacted", "dismissed"] as const).find((s) => s === statusParam);
+  const leads = await getLeads(activeStatus);
   return <section className="shell py-16">
     <div className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -78,7 +94,14 @@ export default async function AdminLeadsPage({ searchParams }: { searchParams: P
           <form action={logoutAction}><button type="submit" className="btn-secondary">Sign out</button></form>
         </div>
       </div>
-      <div className="mt-8 overflow-x-auto rounded-xl border border-white/10">
+      <div className="mt-8 flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-wider text-white/40">Filter:</span>
+        {FILTERS.map((f) => {
+          const isActive = (activeStatus ?? "") === f.value;
+          return <a key={f.value} href={f.value ? `/admin/leads?status=${f.value}` : "/admin/leads"} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${isActive ? "border-forge-lime/50 bg-forge-lime/10 text-forge-lime" : "border-white/10 text-white/50 hover:border-white/30 hover:text-white"}`} aria-current={isActive ? "page" : undefined}>{f.label}</a>;
+        })}
+      </div>
+      <div className="mt-4 overflow-x-auto rounded-xl border border-white/10">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-white/10 bg-white/[.03] text-xs uppercase tracking-wider text-white/50">
             <tr>
