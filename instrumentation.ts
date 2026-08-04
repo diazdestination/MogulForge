@@ -52,12 +52,29 @@ export async function register() {
   }
 
   if (!globalState.__webhookRetryTimer) {
+    let crmPullRunning = false;
     const retryTick = async () => {
       try {
         const { processDueDeliveries } = await import("./lib/webhooks/outgoing");
         await processDueDeliveries();
       } catch (error) {
         console.error("Outgoing webhook retry pass failed", error);
+      }
+      // Scheduled CRM pulls piggyback on the same processor; runScheduledCrmPulls
+      // itself only pulls connections whose last pull is older than its interval.
+      if (!crmPullRunning) {
+        crmPullRunning = true;
+        try {
+          const { runScheduledCrmPulls } = await import("./lib/crm/sync");
+          const result = await runScheduledCrmPulls();
+          if (result.pulled > 0 || result.failed > 0) {
+            console.log(`Scheduled CRM pull pass: ${result.pulled} pulled, ${result.failed} failed`);
+          }
+        } catch (error) {
+          console.error("Scheduled CRM pull pass failed", error);
+        } finally {
+          crmPullRunning = false;
+        }
       }
     };
     globalState.__webhookRetryTimer = setInterval(retryTick, WEBHOOK_RETRY_INTERVAL_MS);

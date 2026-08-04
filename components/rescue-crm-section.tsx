@@ -20,7 +20,12 @@ type Connection = {
   config: Record<string, unknown>;
   fieldMapping: FieldMappingEntry[];
   lastTestAt: string | null;
-  lastTestResult: { ok?: boolean; statusCode?: number | null; message?: string } | null;
+  lastTestResult: {
+    ok?: boolean;
+    statusCode?: number | null;
+    message?: string;
+    lastPull?: { at?: string; ok?: boolean; message?: string } | null;
+  } | null;
 };
 type Delivery = {
   id: string;
@@ -323,6 +328,16 @@ export function RescueCrmSection({ orgId }: { orgId: string }) {
                       {" "}
                       · last test: {conn.lastTestResult.ok ? "passed" : `failed (${conn.lastTestResult.message ?? "error"})`}
                     </span>
+                  )}
+                  {conn.lastTestResult?.lastPull?.at && (
+                    <span className={conn.lastTestResult.lastPull.ok === false ? "text-red-300/80" : "text-white/40"}>
+                      {" "}
+                      · last pull: {new Date(conn.lastTestResult.lastPull.at).toLocaleString()}
+                      {conn.lastTestResult.lastPull.ok === false && " (failed)"}
+                    </span>
+                  )}
+                  {conn.status === "active" && conn.syncDirection !== "outbound" && (conn.provider === "hubspot" || conn.provider === "gohighlevel") && !conn.lastTestResult?.lastPull?.at && (
+                    <span className="text-white/40"> · pulls every 15 min (none yet)</span>
                   )}
                 </div>
                 <div className="flex gap-2">

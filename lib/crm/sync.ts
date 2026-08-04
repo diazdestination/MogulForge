@@ -3,7 +3,7 @@ import { getPool } from "../db";
 import { logAudit } from "../audit";
 import { pushLeadForProvider, pullContactsForProvider, type RemoteContact } from "./adapters";
 import { recordPushDelivery } from "./deliveries";
-import { listCrmConnections, recordSyncConflict, updateCrmConnection, type CrmConnection } from "./store";
+import { getCrmConnection, listCrmConnections, recordSyncConflict, updateCrmConnection, type CrmConnection } from "./store";
 import { normalizeEmail, normalizePhone } from "../public-api/lead-intake";
 
 /**
@@ -130,7 +130,15 @@ export type PullSummary = { ok: boolean; message: string; matched: number; updat
  */
 export async function pullCrmUpdates(organizationId: string, connection: CrmConnection): Promise<PullSummary> {
   const result = await pullContactsForProvider(connection.provider, connection.config);
-  if (!result.ok) return { ok: false, message: result.message, matched: 0, updated: 0, conflicts: 0, unmatched: 0 };
+  if (!result.ok) {
+    const failure: PullSummary = { ok: false, message: result.message, matched: 0, updated: 0, conflicts: 0, unmatched: 0 };
+    // Record failed pulls too, so the UI shows the outcome and the scheduler
+    // waits a full interval instead of retrying a broken connection every pass.
+    await updateCrmConnection(organizationId, connection.id, {
+      lastTestResult: { ...(connection.lastTestResult ?? {}), lastPull: { at: new Date().toISOString(), ...failure } },
+    }).catch((error) => console.error("CRM pull result save failed", error));
+    return failure;
+  }
 
   const pool = getPool();
   let matched = 0;
@@ -213,4 +221,59 @@ export async function pullCrmUpdates(organizationId: string, connection: CrmConn
     lastTestResult: { ...(connection.lastTestResult ?? {}), lastPull: { at: new Date().toISOString(), ...summary } },
   });
   return summary;
+}
+
+/** How often the scheduler pulls each active inbound-capable connection. */
+export const SCHEDULED_PULL_INTERVAL_MINUTES = 15;
+
+/**
+ * Background processor: pulls updates for every active inbound/bidirectional
+ * connection whose last pull (success or failure) is older than the interval.
+ * Results flow through the same pullCrmUpdates path as manual pulls, so
+ * conflict detection and the per-connection lastPull record behave identically.
+ * Per-connection failures are audited and never abort the pass.
+ */
+export async function runScheduledCrmPulls(limit = 10): Promise<{ pulled: number; failed: number }> {
+  const { rows } = await getPool().query(
+    `SELECT id, organization_id FROM crm_connections
+     WHERE status = 'active'
+       AND sync_direction IN ('inbound', 'bidirectional')
+       AND provider IN ('hubspot', 'gohighlevel')
+       AND (
+         last_test_result->'lastPull'->>'at' IS NULL
+         OR (last_test_result->'lastPull'->>'at')::timestamptz <= now() - ($1 || ' minutes')::interval
+       )
+     ORDER BY last_test_result->'lastPull'->>'at' ASC NULLS FIRST
+     LIMIT $2`,
+    [String(SCHEDULED_PULL_INTERVAL_MINUTES), limit],
+  );
+
+  let pulled = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const organizationId = String(row.organization_id);
+    const connectionId = String(row.id);
+    try {
+      const connection = await getCrmConnection(organizationId, connectionId);
+      if (!connection || connection.status !== "active" || connection.syncDirection === "outbound") continue;
+      const summary = await pullCrmUpdates(organizationId, connection);
+      if (summary.ok) {
+        pulled += 1;
+      } else {
+        failed += 1;
+        await logAudit({
+          organizationId,
+          actorLabel: "system",
+          action: "crm_sync.scheduled_pull_failed",
+          targetType: "crm_connection",
+          targetId: connectionId,
+          metadata: { provider: connection.provider, message: summary.message },
+        }).catch((error) => console.error("CRM scheduled pull audit failed", error));
+      }
+    } catch (error) {
+      failed += 1;
+      console.error("Scheduled CRM pull failed", { organizationId, connectionId }, error);
+    }
+  }
+  return { pulled, failed };
 }
