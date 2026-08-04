@@ -1,12 +1,21 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { getPool } from "@/lib/db";
 import { checkPassword, createAdminSession, destroyAdminSession, isAdmin } from "@/lib/admin-auth";
 
 export const metadata: Metadata = { title: "Leads — Admin", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
-type Lead = { id: string; url: string; email: string; score: number; created_at: string };
+type LeadStatus = "new" | "contacted" | "dismissed";
+type Lead = { id: string; url: string; email: string; score: number; created_at: string; status: LeadStatus };
+
+const STATUS_STYLES: Record<LeadStatus, string> = {
+  new: "border-forge-lime/40 bg-forge-lime/10 text-forge-lime",
+  contacted: "border-sky-400/40 bg-sky-400/10 text-sky-300",
+  dismissed: "border-white/15 bg-white/[.06] text-white/50",
+};
+const STATUS_LABELS: Record<LeadStatus, string> = { new: "New", contacted: "Contacted", dismissed: "Dismissed" };
 
 async function loginAction(formData: FormData) {
   "use server";
@@ -22,9 +31,19 @@ async function logoutAction() {
   redirect("/admin/leads");
 }
 
+async function setStatusAction(formData: FormData) {
+  "use server";
+  if (!(await isAdmin())) redirect("/admin/leads");
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!id || !["new", "contacted", "dismissed"].includes(status)) redirect("/admin/leads");
+  await getPool().query("UPDATE visibility_reports SET status = $1 WHERE id = $2", [status, id]);
+  revalidatePath("/admin/leads");
+}
+
 async function getLeads(): Promise<Lead[]> {
   const { rows } = await getPool().query(
-    "SELECT id, url, email, score, created_at FROM visibility_reports ORDER BY created_at DESC LIMIT 500",
+    "SELECT id, url, email, score, created_at, status FROM visibility_reports ORDER BY created_at DESC LIMIT 500",
   );
   return rows;
 }
@@ -68,16 +87,27 @@ export default async function AdminLeadsPage({ searchParams }: { searchParams: P
               <th className="px-4 py-3">Score</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Report</th>
+              <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
           <tbody>
-            {leads.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-white/40">No leads yet. They&rsquo;ll appear here after someone runs an AI Visibility scan.</td></tr>}
+            {leads.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-white/40">No leads yet. They&rsquo;ll appear here after someone runs an AI Visibility scan.</td></tr>}
             {leads.map((lead) => <tr key={lead.id} className="border-b border-white/5 last:border-0">
               <td className="px-4 py-3"><a href={`mailto:${lead.email}`} className="text-forge-lime hover:underline">{lead.email}</a></td>
               <td className="max-w-[16rem] truncate px-4 py-3"><a href={lead.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{lead.url}</a></td>
               <td className="px-4 py-3 font-semibold">{lead.score}</td>
               <td className="whitespace-nowrap px-4 py-3 text-white/60">{new Date(lead.created_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td>
               <td className="px-4 py-3"><a href={`/ai-visibility/r/${lead.id}`} target="_blank" className="text-white/60 hover:underline">View</a></td>
+              <td className="whitespace-nowrap px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[lead.status]}`}>{STATUS_LABELS[lead.status]}</span>
+                  {(["new", "contacted", "dismissed"] as const).filter((s) => s !== lead.status).map((s) => <form key={s} action={setStatusAction}>
+                    <input type="hidden" name="id" value={lead.id} />
+                    <input type="hidden" name="status" value={s} />
+                    <button type="submit" className="rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-white/50 transition hover:border-white/30 hover:text-white">{STATUS_LABELS[s]}</button>
+                  </form>)}
+                </div>
+              </td>
             </tr>)}
           </tbody>
         </table>
