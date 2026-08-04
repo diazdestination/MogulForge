@@ -141,6 +141,22 @@ export async function register() {
       console.error("CRM delivery log cleanup failed", error);
     }
     try {
+      const { cleanupOldWebhookDeliveries } = await import("./lib/webhooks/outgoing");
+      const { succeededDeleted, failedDeleted } = await cleanupOldWebhookDeliveries();
+      if (succeededDeleted > 0 || failedDeleted > 0) {
+        console.log(`Webhook delivery log cleanup: removed ${succeededDeleted} succeeded, ${failedDeleted} failed row(s)`);
+      }
+    } catch (error) {
+      console.error("Webhook delivery log cleanup failed", error);
+    }
+    try {
+      const { cleanupOldAuditLogs } = await import("./lib/audit");
+      const { deleted } = await cleanupOldAuditLogs();
+      if (deleted > 0) console.log(`Audit log cleanup: removed ${deleted} row(s)`);
+    } catch (error) {
+      console.error("Audit log cleanup failed", error);
+    }
+    try {
       const { runOrgWeeklyDigests } = await import("./lib/org-alerts");
       const outcomes = await runOrgWeeklyDigests();
       const sent = outcomes.filter((o) => o.status === "sent").length;

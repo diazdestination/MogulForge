@@ -32,6 +32,24 @@ export async function logAudit(event: AuditEvent) {
   }
 }
 
+/**
+ * Retention: audit log rows are kept for 2 years, then pruned. Audit history
+ * is deliberately kept much longer than delivery logs (compliance/debugging
+ * value), but not forever — high-volume orgs would otherwise bloat the table
+ * without bound. If indefinite retention is ever required, export to cold
+ * storage before this window rather than removing the cleanup.
+ */
+export const AUDIT_RETENTION_DAYS = 730;
+
+/** Deletes audit log rows older than the retention window. */
+export async function cleanupOldAuditLogs(): Promise<{ deleted: number }> {
+  const result = await getPool().query(
+    `DELETE FROM audit_logs WHERE created_at < now() - make_interval(days => $1)`,
+    [AUDIT_RETENTION_DAYS],
+  );
+  return { deleted: result.rowCount ?? 0 };
+}
+
 export type AuditLogRow = {
   id: string;
   organizationId: string | null;

@@ -325,6 +325,31 @@ export async function retryDelivery(organizationId: string, deliveryId: string):
   return updated[0] ? mapDelivery(updated[0]) : null;
 }
 
+/** Retention: succeeded delivery rows are pruned after this many days. */
+export const DELIVERY_SUCCEEDED_RETENTION_DAYS = 30;
+/** Retention: failed/exhausted/disabled rows are kept longer so retries and debugging stay possible. */
+export const DELIVERY_FAILED_RETENTION_DAYS = 90;
+
+/**
+ * Deletes old outgoing webhook delivery rows per retention policy. Rows still
+ * awaiting a retry (status 'failed' with a future next_attempt_at) are far
+ * younger than the retention window, so cutting on created_at is safe.
+ */
+export async function cleanupOldWebhookDeliveries(): Promise<{ succeededDeleted: number; failedDeleted: number }> {
+  const pool = getPool();
+  const succeeded = await pool.query(
+    `DELETE FROM outgoing_webhook_deliveries
+     WHERE status = 'succeeded' AND created_at < now() - make_interval(days => $1)`,
+    [DELIVERY_SUCCEEDED_RETENTION_DAYS],
+  );
+  const failed = await pool.query(
+    `DELETE FROM outgoing_webhook_deliveries
+     WHERE status IN ('failed', 'exhausted', 'disabled', 'pending') AND created_at < now() - make_interval(days => $1)`,
+    [DELIVERY_FAILED_RETENTION_DAYS],
+  );
+  return { succeededDeleted: succeeded.rowCount ?? 0, failedDeleted: failed.rowCount ?? 0 };
+}
+
 /** Background processor: retries all due failed deliveries. Called from instrumentation + cron. */
 export async function processDueDeliveries(limit = 25): Promise<{ processed: number }> {
   const pool = getPool();
