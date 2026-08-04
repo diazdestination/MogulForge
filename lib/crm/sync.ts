@@ -3,7 +3,7 @@ import { getPool } from "../db";
 import { logAudit } from "../audit";
 import { pushLeadForProvider, pullContactsForProvider, type RemoteContact } from "./adapters";
 import { recordPushDelivery, retryPushDelivery } from "./deliveries";
-import { getCrmConnection, listCrmConnections, recordSyncConflict, updateCrmConnection, type CrmConnection } from "./store";
+import { getCrmConnection, listCrmConnections, recordPullFailure, recordSyncConflict, updateCrmConnection, type CrmConnection } from "./store";
 import { normalizeEmail, normalizePhone } from "../public-api/lead-intake";
 
 /**
@@ -132,13 +132,6 @@ export type PullSummary = {
   consecutiveFailures: number;
 };
 
-/** Reads the stored consecutive scheduled-pull failure count off a connection. */
-function readConsecutivePullFailures(connection: CrmConnection): number {
-  const lastPull = (connection.lastTestResult as { lastPull?: { consecutiveFailures?: unknown } } | null)?.lastPull;
-  const value = Number(lastPull?.consecutiveFailures ?? 0);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
-}
-
 /**
  * Pulls recent contacts from the provider and reconciles them with local leads.
  * Remote changes only apply automatically when the remote copy is provably newer
@@ -153,14 +146,22 @@ export async function pullCrmUpdates(
 ): Promise<PullSummary> {
   const result = await pullContactsForProvider(connection.provider, connection.config);
   if (!result.ok) {
-    const previousFailures = readConsecutivePullFailures(connection);
-    const consecutiveFailures = options.scheduled ? previousFailures + 1 : previousFailures;
-    const failure: PullSummary = { ok: false, message: result.message, matched: 0, updated: 0, conflicts: 0, unmatched: 0, consecutiveFailures };
+    const failure: PullSummary = { ok: false, message: result.message, matched: 0, updated: 0, conflicts: 0, unmatched: 0, consecutiveFailures: 0 };
     // Record failed pulls too, so the UI shows the outcome and the scheduler
     // waits a full interval instead of retrying a broken connection every pass.
-    await updateCrmConnection(organizationId, connection.id, {
-      lastTestResult: { ...(connection.lastTestResult ?? {}), lastPull: { at: new Date().toISOString(), ...failure } },
-    }).catch((error) => console.error("CRM pull result save failed", error));
+    // The failure counter is incremented atomically inside the UPDATE itself,
+    // so concurrent scheduler passes on multiple servers never lose or double
+    // an increment (read-then-write in JS would race).
+    const storedFailures = await recordPullFailure(
+      organizationId,
+      connection.id,
+      { at: new Date().toISOString(), ...failure },
+      { increment: Boolean(options.scheduled) },
+    ).catch((error) => {
+      console.error("CRM pull result save failed", error);
+      return null;
+    });
+    failure.consecutiveFailures = storedFailures ?? (options.scheduled ? 1 : 0);
     return failure;
   }
 

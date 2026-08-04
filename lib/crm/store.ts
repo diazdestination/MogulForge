@@ -100,6 +100,38 @@ export async function updateCrmConnection(
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
+/**
+ * Records a failed pull outcome on last_test_result.lastPull in ONE atomic SQL
+ * statement, incrementing the stored consecutiveFailures counter in-place when
+ * the failure came from a scheduled run. Because the increment happens inside
+ * the UPDATE (not read-then-write in JS), concurrent scheduler passes on
+ * multiple servers can never lose or double an increment. Returns the counter
+ * value after the update, or null when the connection no longer exists.
+ */
+export async function recordPullFailure(
+  organizationId: string,
+  connectionId: string,
+  failure: Record<string, unknown>,
+  options: { increment: boolean },
+): Promise<number | null> {
+  const { rows } = await getPool().query(
+    `UPDATE crm_connections SET updated_at = now(), last_test_result =
+       COALESCE(last_test_result, '{}'::jsonb) || jsonb_build_object(
+         'lastPull', $3::jsonb || jsonb_build_object(
+           'consecutiveFailures',
+           (CASE WHEN jsonb_typeof(last_test_result->'lastPull'->'consecutiveFailures') = 'number'
+                 AND (last_test_result->'lastPull'->>'consecutiveFailures')::numeric > 0
+              THEN floor((last_test_result->'lastPull'->>'consecutiveFailures')::numeric)::int
+              ELSE 0 END) + (CASE WHEN $4 THEN 1 ELSE 0 END)
+         )
+       )
+     WHERE organization_id = $1 AND id = $2
+     RETURNING (last_test_result->'lastPull'->>'consecutiveFailures')::int AS consecutive_failures`,
+    [organizationId, connectionId, JSON.stringify(failure), options.increment],
+  );
+  return rows[0] ? Number(rows[0].consecutive_failures) : null;
+}
+
 export async function deleteCrmConnection(organizationId: string, connectionId: string): Promise<boolean> {
   const result = await getPool().query(`DELETE FROM crm_connections WHERE organization_id = $1 AND id = $2`, [
     organizationId,
