@@ -1,6 +1,5 @@
-import "server-only";
-import type { CrawlSignals } from "./visibility-crawler";
-import type { CategoryScore, VisibilityReport } from "./visibility-schema";
+import type { CrawlSignals } from "./visibility-crawler.ts";
+import type { CategoryScore, VisibilityReport } from "./visibility-schema.ts";
 
 function clamp(n: number): number { return Math.max(0, Math.min(100, Math.round(n))); }
 
