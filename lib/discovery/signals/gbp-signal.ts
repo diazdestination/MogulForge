@@ -33,7 +33,7 @@ export async function getGbpSignals(organizationId: string): Promise<GbpSignalRe
   );
   if (rows.length === 0) return { status: "not_connected" };
 
-  const granted: string[] = Array.isArray(rows[0].granted_scopes) ? (rows[0].granted_scopes as string[]) : [];
+  const granted: string[] = typeof rows[0].granted_scopes === "string" ? rows[0].granted_scopes.split(" ").filter(Boolean) : [];
   if (!granted.includes(GBP_SCOPE)) return { status: "no_scope" };
 
   let accessToken: string;
