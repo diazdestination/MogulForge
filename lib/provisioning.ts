@@ -4,6 +4,7 @@ import { getPool } from "./db";
 import { FEATURE_KEYS, type FeatureKey } from "./entitlements";
 import type { OrgStatus, Plan, UsageLimits } from "./plans";
 import { logAudit } from "./audit";
+import { checkLogoUrl } from "./logo-url-core";
 
 export type ProvisionInput = {
   name: string;
@@ -41,6 +42,12 @@ export function slugify(value: string) {
  * initial owner invite. Audit-logged.
  */
 export async function provisionOrganization(input: ProvisionInput, actor: { userId?: string | null; label: string }): Promise<ProvisionResult> {
+  if (input.logoUrl) {
+    // Logo URLs are also fetched server-side (portal favicon), so every
+    // write path enforces the same safe-URL policy.
+    const verdict = checkLogoUrl(input.logoUrl);
+    if (!verdict.ok) throw new Error(verdict.reason);
+  }
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");

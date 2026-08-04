@@ -48,6 +48,13 @@ const webSiteJsonLd = {
   url: SITE_URL,
 };
 
+/** Deterministic short hash of the logo URL — cache-busts icons when the logo changes. */
+function iconVersion(logoUrl: string): string {
+  let hash = 5381;
+  for (let i = 0; i < logoUrl.length; i++) hash = ((hash * 33) ^ logoUrl.charCodeAt(i)) >>> 0;
+  return hash.toString(36);
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const context = await getPortalHostContext();
   if (context.kind === "portal") {
@@ -58,7 +65,17 @@ export async function generateMetadata(): Promise<Metadata> {
       robots: { index: false, follow: false },
       // The client's own logo in the browser tab — never the MogulForge favicon
       // on a branded domain. Orgs without a logo get no icon rather than ours.
-      ...(branding.logoUrl ? { icons: { icon: branding.logoUrl, apple: branding.logoUrl } } : {}),
+      // Icons go through /api/portal-icon, which serves a small square PNG
+      // derivative so huge or wide logos still render crisply at tab size.
+      // The `v` hash busts browser caches when the org swaps its logo.
+      ...(branding.logoUrl
+        ? {
+            icons: {
+              icon: `/api/portal-icon?size=64&v=${iconVersion(branding.logoUrl)}`,
+              apple: `/api/portal-icon?size=180&v=${iconVersion(branding.logoUrl)}`,
+            },
+          }
+        : {}),
     };
   }
   if (context.kind === "unknown_domain") {

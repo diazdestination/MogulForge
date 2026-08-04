@@ -4,6 +4,7 @@ import { getOrganizationById, listEntitlements, listInvites, listMembers, setEnt
 import { isFeatureKey } from "@/lib/entitlements";
 import { isPlan, ORG_STATUSES, type OrgStatus } from "@/lib/plans";
 import { logAudit } from "@/lib/audit";
+import { checkLogoUrl } from "@/lib/logo-url-core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,16 @@ export const PATCH = guard(async (request: Request, { params }: Ctx) => {
   }
   if (typeof body.brandPrimaryColor === "string") patch.brandPrimaryColor = body.brandPrimaryColor.trim() || null;
   if (typeof body.brandSecondaryColor === "string") patch.brandSecondaryColor = body.brandSecondaryColor.trim() || null;
-  if (typeof body.logoUrl === "string") patch.logoUrl = body.logoUrl.trim() || null;
+  if (typeof body.logoUrl === "string") {
+    const logoUrl = body.logoUrl.trim() || null;
+    if (logoUrl !== null) {
+      // Logo URLs are also fetched server-side (portal favicon), so every
+      // write path enforces the same safe-URL policy.
+      const verdict = checkLogoUrl(logoUrl);
+      if (!verdict.ok) throw new ApiError(400, verdict.reason);
+    }
+    patch.logoUrl = logoUrl;
+  }
   if (Array.isArray(body.allowedOrigins)) patch.allowedOrigins = body.allowedOrigins.map(String).map((o) => o.trim()).filter(Boolean);
   if (typeof body.usageLimits === "object" && body.usageLimits) patch.usageLimits = body.usageLimits;
 

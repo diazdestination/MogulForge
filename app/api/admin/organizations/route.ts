@@ -4,6 +4,7 @@ import { listOrganizations } from "@/lib/tenant";
 import { provisionOrganization } from "@/lib/provisioning";
 import { isFeatureKey, type FeatureKey } from "@/lib/entitlements";
 import { isPlan } from "@/lib/plans";
+import { checkLogoUrl } from "@/lib/logo-url-core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,14 @@ export const POST = guard(async (request: Request) => {
   const ownerEmail = String((body.owner as Record<string, unknown> | undefined)?.email ?? "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) throw new ApiError(400, "A valid owner email is required.");
 
+  const logoUrl = typeof body.logoUrl === "string" ? body.logoUrl.trim() || null : null;
+  if (logoUrl !== null) {
+    // Logo URLs are also fetched server-side (portal favicon), so every
+    // write path enforces the same safe-URL policy.
+    const verdict = checkLogoUrl(logoUrl);
+    if (!verdict.ok) throw new ApiError(400, verdict.reason);
+  }
+
   const modules: FeatureKey[] = Array.isArray(body.modules)
     ? body.modules.map(String).filter(isFeatureKey)
     : [];
@@ -43,7 +52,7 @@ export const POST = guard(async (request: Request) => {
       usageLimits: typeof body.usageLimits === "object" && body.usageLimits ? (body.usageLimits as Record<string, number>) : {},
       brandPrimaryColor: typeof body.brandPrimaryColor === "string" ? body.brandPrimaryColor : null,
       brandSecondaryColor: typeof body.brandSecondaryColor === "string" ? body.brandSecondaryColor : null,
-      logoUrl: typeof body.logoUrl === "string" ? body.logoUrl : null,
+      logoUrl,
       allowedOrigins,
       owner: {
         email: ownerEmail,

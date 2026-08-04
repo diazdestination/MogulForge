@@ -3,6 +3,7 @@ import { guard, readJson, requireMember, ApiError } from "@/lib/api-guard";
 import { MANAGER_ROLES } from "@/lib/roles";
 import { updateOrganization } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
+import { checkLogoUrl } from "@/lib/logo-url-core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,16 @@ export const PATCH = guard(async (request: Request, { params }: Ctx) => {
   if (typeof body.timezone === "string" && body.timezone.trim()) patch.timezone = body.timezone.trim();
   if (typeof body.brandPrimaryColor === "string") patch.brandPrimaryColor = body.brandPrimaryColor.trim() || null;
   if (typeof body.brandSecondaryColor === "string") patch.brandSecondaryColor = body.brandSecondaryColor.trim() || null;
-  if (typeof body.logoUrl === "string") patch.logoUrl = body.logoUrl.trim() || null;
+  if (typeof body.logoUrl === "string") {
+    const logoUrl = body.logoUrl.trim() || null;
+    if (logoUrl !== null) {
+      // Logo URLs are also fetched server-side (portal favicon), so every
+      // write path enforces the same safe-URL policy.
+      const verdict = checkLogoUrl(logoUrl);
+      if (!verdict.ok) throw new ApiError(400, verdict.reason);
+    }
+    patch.logoUrl = logoUrl;
+  }
   if (Object.keys(patch).length === 0) throw new ApiError(400, "No valid fields to update.");
   const updated = await updateOrganization(org.id, patch);
   await logAudit({

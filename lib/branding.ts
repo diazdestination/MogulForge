@@ -2,6 +2,7 @@ import "server-only";
 import { getEntitlement, getOrganizationById, updateOrganization, type Organization } from "./tenant";
 import { isBrandingLevel, isHexColor, resolveBranding, type EffectiveBranding } from "./branding-core";
 import { normalizeEmbedTheme, type EmbedTheme } from "./embed/theme-core";
+import { checkLogoUrl } from "./logo-url-core";
 
 /**
  * Server-side branding resolution + updates. The effective branding an org's
@@ -84,7 +85,13 @@ export async function updateOrgBranding(organizationId: string, patch: BrandingP
   }
   if (patch.logoUrl !== undefined) {
     const value = cleanField(patch.logoUrl, 500);
-    if (value !== null && !/^https:\/\//i.test(value)) throw new BrandingValidationError("Logo URL must start with https://");
+    if (value !== null) {
+      if (!/^https:\/\//i.test(value)) throw new BrandingValidationError("Logo URL must start with https://");
+      // Same safe-URL policy as every other logo write path — the URL is
+      // also fetched server-side (portal favicon), so no IPs/localhost.
+      const verdict = checkLogoUrl(value);
+      if (!verdict.ok) throw new BrandingValidationError(verdict.reason);
+    }
     update.logoUrl = value;
   }
   if (patch.supportEmail !== undefined) {

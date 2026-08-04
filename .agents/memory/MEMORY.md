@@ -16,6 +16,7 @@
 - [OG image rendering pitfalls](og-image-satori.md) — inline remote logos as data URLs with explicit dims or Satori 500s; portal proxy allow-list must include /opengraph-image.
 - [Embed SSR theme testing](embed-ssr-theme-testing.md) — embed pages must style from the merged theme pre-branding; flight payload echoes raw query params, assert style contexts only.
 - [SMS drafts vs. minted booking links](sms-booking-link-length.md) — long /book tokens can blow the SMS length cap; compose compactly, never drop link/opt-out; booking_url adapter is "connected" when SESSION_SECRET exists.
+- [Logo URL SSRF policy](logo-url-ssrf-policy.md) — tenant-set URLs the server fetches need shared write-path validation + DNS-vetted, IP-pinned fetch; redirects refused.
 - [Test suite serialization](test-suite-serialization.md) — never run `npm test` (all files parallel) against next dev; provisioning stampedes hang the server. Run test files one at a time.
 - [CRM pull semantics](crm-pull-semantics.md) — inbound CRM pull only updates EXISTING leads; unmatched contacts are never created. UI must not promise "import via CRM".
 - [SSRF guard vs dev domain](ssrf-guard-dev-domain.md) — REPLIT_DEV_DOMAIN resolves to a PRIVATE IP inside the container; crawler tests must target a real public site (example.com), never the dev domain.
