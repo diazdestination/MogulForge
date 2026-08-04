@@ -38,6 +38,17 @@ export type AudienceFilters = {
   importId: string | null;
 };
 
+/**
+ * Quiet-hours check for a given local hour (0-23). Quiet hours wrap midnight
+ * (e.g. start 20 / end 8 means no sends from 8pm through 7:59am). Equal
+ * start/end means quiet hours are disabled.
+ */
+export function isWithinQuietHours(schedule: Pick<CampaignSchedule, "quietHoursStart" | "quietHoursEnd">, hour: number): boolean {
+  const { quietHoursStart: start, quietHoursEnd: end } = schedule;
+  if (start === end) return false;
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+}
+
 export type CampaignSchedule = {
   startDate: string | null; // ISO date; null = start on activation
   quietHoursStart: number; // local hour 0-23 — no sends at/after this hour

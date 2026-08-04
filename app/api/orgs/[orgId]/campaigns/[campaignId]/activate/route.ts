@@ -14,8 +14,10 @@ type Ctx = { params: Promise<{ orgId: string; campaignId: string }> };
 
 /**
  * Campaign activation. Requires explicit confirmation from a human
- * (`confirm: true`). Live mode is refused while no provider is connected —
- * the send engine enforces this and the DB constraint backs it up.
+ * (`confirm: true`). Live mode works only when a real provider is connected
+ * (Twilio for SMS, a dedicated Resend outreach sender for email) — otherwise
+ * the send engine refuses it and the DB constraint backs it up. Simulation
+ * Mode remains the default.
  */
 export const POST = guard(async (request: Request, { params }: Ctx) => {
   const { orgId, campaignId } = await params;
@@ -49,12 +51,16 @@ export const POST = guard(async (request: Request, { params }: Ctx) => {
       orgName: campaign.channel === "sms" ? branding.smsSenderName : branding.emailSenderName,
       actorUserId: user.id,
     });
-    if (result.simulatedSends > 0) recordUsageInBackground(org.id, sendMetric, result.simulatedSends);
+    const metered = result.simulatedSends + result.liveSends;
+    if (metered > 0) recordUsageInBackground(org.id, sendMetric, metered);
     return NextResponse.json({
       campaign: result.campaign,
       enrolled: result.enrolled,
       simulatedSends: result.simulatedSends,
+      liveSends: result.liveSends,
+      failedSends: result.failedSends,
       skippedNoContact: result.skippedNoContact,
+      skippedNoConsent: result.skippedNoConsent,
       accounting: result.accounting,
     });
   } catch (error) {

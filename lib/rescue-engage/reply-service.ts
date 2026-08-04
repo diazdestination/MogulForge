@@ -41,6 +41,8 @@ export async function processInboundReply(input: {
   actorUserId: string | null;
   /** Explicit override when a human corrects the classification while logging a call. */
   categoryOverride?: ReplyCategory;
+  /** Message source: 'manual' for human-logged replies, or the webhook provider ('twilio' / 'resend_outreach'). */
+  provider?: string;
 }): Promise<ReplyOutcome> {
   const classification = input.categoryOverride
     ? { category: input.categoryOverride, confidence: 1, matched: "manual" }
@@ -58,7 +60,7 @@ export async function processInboundReply(input: {
     body: input.body,
     status: "received",
     simulated: false,
-    provider: "manual",
+    provider: input.provider ?? "manual",
     createdBy: input.actorUserId,
     replyCategory: classification.category,
     replyConfidence: classification.confidence,

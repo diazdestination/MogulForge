@@ -376,6 +376,7 @@ export type MessageRecord = {
   status: string;
   simulated: boolean;
   provider: string;
+  providerMessageId: string | null;
   replyCategory: ReplyCategory | null;
   replyConfidence: number | null;
   replyRule: string | null;
@@ -385,7 +386,7 @@ export type MessageRecord = {
 };
 
 const MESSAGE_COLUMNS = `id, lead_id, campaign_id, direction, channel, subject, body, status, simulated, provider,
-  reply_category, reply_confidence, reply_rule, created_by, sent_at, created_at`;
+  provider_message_id, reply_category, reply_confidence, reply_rule, created_by, sent_at, created_at`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapMessage(row: any): MessageRecord {
@@ -400,6 +401,7 @@ function mapMessage(row: any): MessageRecord {
     status: row.status,
     simulated: row.simulated,
     provider: row.provider,
+    providerMessageId: row.provider_message_id ?? null,
     replyCategory: row.reply_category,
     replyConfidence: row.reply_confidence != null ? Number(row.reply_confidence) : null,
     replyRule: row.reply_rule,
@@ -420,6 +422,7 @@ export async function insertMessage(input: {
   status: string;
   simulated: boolean;
   provider?: string;
+  providerMessageId?: string | null;
   createdBy?: string | null;
   replyCategory?: ReplyCategory | null;
   replyConfidence?: number | null;
@@ -427,16 +430,79 @@ export async function insertMessage(input: {
 }): Promise<MessageRecord> {
   const { rows } = await getPool().query(
     `INSERT INTO rescue_messages (organization_id, lead_id, campaign_id, direction, channel, subject, body, status,
-       simulated, provider, created_by, reply_category, reply_confidence, reply_rule, sent_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $4 = 'outbound' THEN now() ELSE NULL END)
+       simulated, provider, provider_message_id, created_by, reply_category, reply_confidence, reply_rule, sent_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CASE WHEN $4 = 'outbound' THEN now() ELSE NULL END)
      RETURNING ${MESSAGE_COLUMNS}`,
     [
       input.organizationId, input.leadId, input.campaignId ?? null, input.direction, input.channel,
       input.subject ?? null, input.body, input.status, input.simulated, input.provider ?? "simulation",
-      input.createdBy ?? null, input.replyCategory ?? null, input.replyConfidence ?? null, input.replyRule ?? null,
+      input.providerMessageId ?? null, input.createdBy ?? null, input.replyCategory ?? null,
+      input.replyConfidence ?? null, input.replyRule ?? null,
     ],
   );
   return mapMessage(rows[0]);
+}
+
+/**
+ * Marks a live outbound message's send outcome. Only touches non-simulated
+ * outbound rows — the simulation-honesty CHECK constraint backs this up.
+ */
+export async function markMessageSendOutcome(
+  organizationId: string,
+  messageId: string,
+  outcome: { status: "sent" | "failed"; providerMessageId?: string | null },
+): Promise<void> {
+  await getPool().query(
+    `UPDATE rescue_messages SET status = $3, provider_message_id = COALESCE($4, provider_message_id)
+     WHERE organization_id = $1 AND id = $2 AND direction = 'outbound' AND simulated = false`,
+    [organizationId, messageId, outcome.status, outcome.providerMessageId ?? null],
+  );
+}
+
+/**
+ * Applies a provider delivery-status callback (delivered/failed) to the live
+ * outbound message it belongs to. Status only moves forward (queued → sent →
+ * delivered/failed); simulated rows can never be touched. Returns the updated
+ * message or null when no matching live message exists.
+ */
+export async function applyDeliveryStatus(
+  provider: string,
+  providerMessageId: string,
+  status: "sent" | "delivered" | "failed",
+): Promise<{ message: MessageRecord; organizationId: string } | null> {
+  const { rows } = await getPool().query(
+    `UPDATE rescue_messages SET status = $3
+     WHERE provider = $1 AND provider_message_id = $2 AND direction = 'outbound' AND simulated = false
+       AND status IN ('queued', 'sent') AND ($3 <> 'sent' OR status = 'queued')
+     RETURNING ${MESSAGE_COLUMNS}, organization_id`,
+    [provider, providerMessageId, status],
+  );
+  return rows[0] ? { message: mapMessage(rows[0]), organizationId: rows[0].organization_id } : null;
+}
+
+/**
+ * Resolves the lead an inbound webhook message (SMS from a phone number, email
+ * reply from an address) belongs to. Provider webhooks are platform-wide, not
+ * org-scoped, so when the same contact exists in several orgs the lead with
+ * the most recent live outbound message on that channel wins.
+ */
+export async function findLeadForInboundContact(
+  channel: "sms" | "email",
+  normalizedContact: string,
+): Promise<{ organizationId: string; leadId: string } | null> {
+  const contactColumn = channel === "sms" ? "phone_normalized" : "email_normalized";
+  const { rows } = await getPool().query(
+    `SELECT l.organization_id, l.id,
+       (SELECT max(m.created_at) FROM rescue_messages m
+         WHERE m.organization_id = l.organization_id AND m.lead_id = l.id
+           AND m.direction = 'outbound' AND m.simulated = false AND m.channel = $2) AS last_live_outbound
+     FROM rescue_leads l
+     WHERE l.${contactColumn} = $1
+     ORDER BY last_live_outbound DESC NULLS LAST, l.updated_at DESC
+     LIMIT 1`,
+    [normalizedContact, channel],
+  );
+  return rows[0] ? { organizationId: rows[0].organization_id, leadId: rows[0].id } : null;
 }
 
 export async function listLeadMessages(organizationId: string, leadId: string, limit = 200): Promise<MessageRecord[]> {
