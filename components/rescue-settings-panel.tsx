@@ -209,6 +209,7 @@ export function RescueSettingsPanel({ orgId, canManage }: { orgId: string; canMa
             ["hotLeadAlerts", "Hot lead alerts", "When AI analysis flags a high-potential opportunity"],
             ["replyAlerts", "Reply alerts", "When a customer replies to a campaign message"],
             ["appointmentAlerts", "Appointment alerts", "When an appointment is booked or changes"],
+            ["crmConnectionAlerts", "CRM connection alerts", "When a CRM connection stops working and lead delivery pauses"],
             ["weeklyDigest", "Weekly digest", "A summary of pipeline movement every Monday"],
           ] as const).map(([key, title, sub]) => (
             <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl bg-black/30 p-3">

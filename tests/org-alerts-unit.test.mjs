@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildAnalysisHotLeadsEmail,
   buildAppointmentAlertEmail,
+  buildCrmConnectionErrorEmail,
   buildHotLeadAlertEmail,
   buildOrgDigestEmail,
   buildReplyAlertEmail,
@@ -64,6 +65,37 @@ test("appointment alert formats valid dates and passes through invalid ones", ()
   assert.ok(email.html.includes("Mon, 10 Aug 2026"));
   assert.ok(email.html.includes("America/Phoenix"));
   assert.ok(email.html.includes("123 Main St"));
+});
+
+test("crm connection error alert names connection/provider and links the delivery log", () => {
+  const email = buildCrmConnectionErrorEmail({
+    orgName: "Acme",
+    connectionName: "Main HubSpot",
+    providerLabel: "HubSpot",
+    consecutiveFailures: 5,
+    lastError: 'HTTP 401 <token expired> "unauthorized"',
+    integrationsUrl: "https://mogulforge.replit.app/dashboard/revenue-rescue/integrations",
+  });
+  assert.equal(email.subject, "CRM connection paused: Main HubSpot (HubSpot) stopped working");
+  assert.ok(email.html.includes("Main HubSpot"));
+  assert.ok(email.html.includes("HubSpot"));
+  assert.ok(email.html.includes(">5<"));
+  assert.ok(email.html.includes('href="https://mogulforge.replit.app/dashboard/revenue-rescue/integrations"'));
+  // Error text is escaped, never raw HTML.
+  assert.ok(email.html.includes("&lt;token expired&gt;"));
+  assert.ok(!email.html.includes("<token expired>"));
+});
+
+test("crm connection error alert omits the last-error row when there is none", () => {
+  const email = buildCrmConnectionErrorEmail({
+    orgName: "Acme",
+    connectionName: "Webhook",
+    providerLabel: "Generic Webhook / REST",
+    consecutiveFailures: 5,
+    lastError: null,
+    integrationsUrl: "https://x.test/dashboard/revenue-rescue/integrations",
+  });
+  assert.ok(!email.html.includes("Last error"));
 });
 
 test("digest activity gate and stat rendering", () => {

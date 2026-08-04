@@ -27,6 +27,7 @@ export type NotificationSettings = {
   hotLeadAlerts: boolean;
   replyAlerts: boolean;
   appointmentAlerts: boolean;
+  crmConnectionAlerts: boolean;
   weeklyDigest: boolean;
   notificationEmails: string[];
 };
@@ -65,7 +66,7 @@ export type OrgSettingsSection = (typeof ORG_SETTINGS_SECTIONS)[number];
 export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   contact: { contactName: "", contactEmail: "", contactPhone: "", website: "", address: "" },
   businessHours: { start: "08:00", end: "18:00", days: [1, 2, 3, 4, 5] },
-  notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, weeklyDigest: false, notificationEmails: [] },
+  notifications: { hotLeadAlerts: true, replyAlerts: true, appointmentAlerts: true, crmConnectionAlerts: true, weeklyDigest: false, notificationEmails: [] },
   messaging: { quietHoursStart: 20, quietHoursEnd: 8, defaultTone: "professional", defaultSenderName: "", defaultBookingLink: "" },
   calendar: { syncProvider: "none", calendlyUrl: "" },
 };
@@ -165,6 +166,7 @@ export function normalizeOrgSettings(raw: unknown, base: OrgSettings = DEFAULT_O
       hotLeadAlerts: bool(notif.hotLeadAlerts, base.notifications.hotLeadAlerts),
       replyAlerts: bool(notif.replyAlerts, base.notifications.replyAlerts),
       appointmentAlerts: bool(notif.appointmentAlerts, base.notifications.appointmentAlerts),
+      crmConnectionAlerts: bool(notif.crmConnectionAlerts, base.notifications.crmConnectionAlerts),
       weeklyDigest: bool(notif.weeklyDigest, base.notifications.weeklyDigest),
       notificationEmails: emailList(notif.notificationEmails, base.notifications.notificationEmails),
     },

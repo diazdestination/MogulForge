@@ -125,6 +125,32 @@ export function buildAnalysisHotLeadsEmail(input: {
   };
 }
 
+export function buildCrmConnectionErrorEmail(input: {
+  orgName: string;
+  connectionName: string;
+  providerLabel: string;
+  consecutiveFailures: number;
+  lastError: string | null;
+  integrationsUrl: string;
+}): AlertEmail {
+  return {
+    subject: `CRM connection paused: ${input.connectionName} (${input.providerLabel}) stopped working`,
+    html: wrap(
+      `⚠️ CRM connection paused — ${input.connectionName}`,
+      `<p style="margin-top:0;color:#374151;">Your ${escapeHtml(input.providerLabel)} connection failed ${input.consecutiveFailures} pushes in a row, so automatic lead delivery has been paused. New leads are still being captured, but they are not reaching your CRM until the connection is fixed.</p>
+       ${detailRows([
+         ["Connection", input.connectionName],
+         ["Provider", input.providerLabel],
+         ["Consecutive failures", String(input.consecutiveFailures)],
+         ["Last error", (input.lastError ?? "").slice(0, 300)],
+       ])}
+       <p style="margin-top:16px;"><a href="${escapeHtml(input.integrationsUrl)}" style="background:#111827;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px;">Review the delivery log</a></p>
+       <p style="color:#374151;font-size:13px;">Fix the credentials or endpoint on the Integrations page, then retry a failed delivery — one success reactivates the connection automatically.</p>`,
+      `Sent by ${input.orgName} alerts. Manage notification preferences in Settings.`,
+    ),
+  };
+}
+
 export type OrgDigestStats = {
   newLeads: number;
   repliesReceived: number;

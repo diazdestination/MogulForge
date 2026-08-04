@@ -35,7 +35,9 @@ test("valid values are accepted and trimmed", () => {
   assert.equal(out.businessHours.start, "07:30");
   assert.deepEqual(out.businessHours.days, [1, 3, 5]);
   assert.equal(out.notifications.weeklyDigest, true);
+  assert.equal(out.notifications.crmConnectionAlerts, true, "crmConnectionAlerts defaults on when omitted");
   assert.deepEqual(out.notifications.notificationEmails, ["a@b.co"]);
+  assert.equal(normalizeOrgSettings({ notifications: { crmConnectionAlerts: false } }).notifications.crmConnectionAlerts, false);
   assert.equal(out.messaging.quietHoursStart, 21);
   assert.equal(out.messaging.defaultTone, "friendly");
 });

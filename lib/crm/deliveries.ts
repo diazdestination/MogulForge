@@ -1,8 +1,11 @@
 import "server-only";
 import { getPool } from "../db";
 import { logAudit } from "../audit";
-import { pushLeadForProvider } from "./adapters";
+import { getCrmProvider, pushLeadForProvider } from "./adapters";
 import { getCrmConnection } from "./store";
+import { sendOrgAlertInBackground } from "../org-alerts";
+import { buildCrmConnectionErrorEmail } from "../org-alerts-content.ts";
+import { SITE_URL } from "../site";
 
 /**
  * Per-connection CRM push delivery log (mirrors the outgoing-webhook deliveries
@@ -71,12 +74,18 @@ export async function recordPushDelivery(
       input.ok ? new Date() : null,
     ],
   );
-  await bumpFailureCount(organizationId, input.connectionId, input.provider, input.ok);
+  await bumpFailureCount(organizationId, input.connectionId, input.provider, input.ok, input.message);
   return String(rows[0].id);
 }
 
 /** Resets the counter on success; on failure increments and flips the connection to 'error' at the threshold. */
-async function bumpFailureCount(organizationId: string, connectionId: string, provider: string, ok: boolean): Promise<void> {
+async function bumpFailureCount(
+  organizationId: string,
+  connectionId: string,
+  provider: string,
+  ok: boolean,
+  lastError: string | null = null,
+): Promise<void> {
   const pool = getPool();
   if (ok) {
     // A success proves the connection works again — clear the counter and recover from 'error'.
@@ -107,6 +116,46 @@ async function bumpFailureCount(organizationId: string, connectionId: string, pr
       targetId: connectionId,
       metadata: { provider, consecutiveFailures: count },
     });
+    await notifyConnectionErrored(organizationId, connectionId, provider, count, lastError);
+  }
+}
+
+/**
+ * Emails the org's notification recipients when a connection flips to 'error'
+ * so the outage surfaces before undelivered leads pile up. Fire-and-forget
+ * delivery — an alert failure must never fail the push that triggered it —
+ * and the crmConnectionAlerts toggle + saved addresses are honored inside
+ * sendOrgAlert.
+ */
+async function notifyConnectionErrored(
+  organizationId: string,
+  connectionId: string,
+  provider: string,
+  consecutiveFailures: number,
+  lastError: string | null,
+): Promise<void> {
+  try {
+    const pool = getPool();
+    const [orgRows, connection] = await Promise.all([
+      pool.query("SELECT name FROM organizations WHERE id = $1", [organizationId]),
+      getCrmConnection(organizationId, connectionId),
+    ]);
+    const orgName = orgRows.rows[0]?.name ? String(orgRows.rows[0].name) : "Your organization";
+    const providerLabel = getCrmProvider(provider)?.label ?? provider;
+    sendOrgAlertInBackground(
+      organizationId,
+      "crmConnectionAlerts",
+      buildCrmConnectionErrorEmail({
+        orgName,
+        connectionName: connection?.name ?? providerLabel,
+        providerLabel,
+        consecutiveFailures,
+        lastError,
+        integrationsUrl: `${SITE_URL}/dashboard/revenue-rescue/integrations`,
+      }),
+    );
+  } catch (error) {
+    console.error(`CRM connection error alert failed for organization ${organizationId}`, error);
   }
 }
 
@@ -159,7 +208,7 @@ export async function retryPushDelivery(
      WHERE id = $1`,
     [deliveryId, result.ok ? "succeeded" : "failed", result.statusCode, result.ok ? null : result.message.slice(0, 500)],
   );
-  await bumpFailureCount(organizationId, connection.id, connection.provider, result.ok);
+  await bumpFailureCount(organizationId, connection.id, connection.provider, result.ok, result.ok ? null : result.message);
   const updated = await getPushDelivery(organizationId, deliveryId);
   return { delivery: updated, ...(result.ok ? {} : { error: `Retry failed: ${result.message}` }) };
 }
