@@ -29,6 +29,8 @@ const JOBS = [
   { name: "calendar-sync", path: "/api/cron/calendar-sync" },
   { name: "domain-health", path: "/api/cron/domain-health" },
   { name: "log-cleanup", path: "/api/cron/log-cleanup" },
+  { name: "site-health", path: "/api/cron/site-health" },
+  { name: "crm-delivery-cleanup", path: "/api/cron/crm-delivery-cleanup" },
 ];
 
 let failures = 0;
