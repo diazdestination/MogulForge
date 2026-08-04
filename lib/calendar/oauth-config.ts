@@ -51,11 +51,17 @@ export const PROVIDER_ENDPOINTS: Record<OrgCalendarProvider, { authUrl: string; 
  * Named extra scope sets for incremental authorization (Google only).
  * "analytics" = read-only Search Console + GA4 — powers the lead-gen
  * analytics view. Never includes any send/write scope.
+ * "gbp" = Google Business Profile — powers the unanswered-review discovery
+ * signal. Read/manage access is required by the GBP API; MogulForge only
+ * reads reviews (no reply writes for now).
  */
 export const GOOGLE_EXTRA_SCOPE_SETS = {
   analytics: [
     "https://www.googleapis.com/auth/webmasters.readonly",
     "https://www.googleapis.com/auth/analytics.readonly",
+  ],
+  gbp: [
+    "https://www.googleapis.com/auth/business.manage",
   ],
 } as const;
 export type GoogleExtraScopeSet = keyof typeof GOOGLE_EXTRA_SCOPE_SETS;

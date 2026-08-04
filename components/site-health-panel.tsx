@@ -22,7 +22,7 @@ type HealthData = {
   widgets: Widget[];
   neverSeenOrigins: string[];
   analytics: {
-    access: { googleConnected: boolean; accountEmail: string | null; searchConsoleGranted: boolean; ga4Granted: boolean };
+    access: { googleConnected: boolean; accountEmail: string | null; searchConsoleGranted: boolean; ga4Granted: boolean; gbpGranted: boolean };
     analyticsEntitled: boolean;
     snapshots: Snapshot[];
     leads28d: number;
@@ -109,6 +109,7 @@ export function SiteHealthPanel({ orgId }: { orgId: string }) {
   const ga4 = analytics.snapshots.find((s) => s.source === "ga4");
   const settingsHref = `/dashboard/settings?org=${orgId}`;
   const grantHref = `/api/orgs/${orgId}/calendar/oauth/google_calendar?scopes=analytics&returnTo=${encodeURIComponent(`/dashboard/revenue-rescue/site-health?org=${orgId}`)}`;
+  const gbpGrantHref = `/api/orgs/${orgId}/calendar/oauth/google_calendar?scopes=gbp&returnTo=${encodeURIComponent(`/dashboard/revenue-rescue/site-health?org=${orgId}`)}`;
 
   const healthCards: { label: string; tone: "good" | "warn" | "bad" | "off"; pill: string; detail: string }[] = [
     {
@@ -157,6 +158,14 @@ export function SiteHealthPanel({ orgId }: { orgId: string }) {
       detail: analytics.access.searchConsoleGranted || analytics.access.ga4Granted
         ? [analytics.access.searchConsoleGranted ? "Search Console" : null, analytics.access.ga4Granted ? "Google Analytics" : null].filter(Boolean).join(" + ") + " (read-only)."
         : "Grant read-only access to see what drives your leads.",
+    },
+    {
+      label: "Google Business Profile",
+      tone: analytics.access.gbpGranted ? "good" : analytics.access.googleConnected ? "off" : "off",
+      pill: analytics.access.gbpGranted ? "Access granted" : "Not connected",
+      detail: analytics.access.gbpGranted
+        ? "Unanswered reviews surface as opportunities automatically."
+        : "Connect to unlock unanswered-review signals in your opportunity feed.",
     },
   ];
 
@@ -272,6 +281,38 @@ export function SiteHealthPanel({ orgId }: { orgId: string }) {
         )}
         {neverSeenOrigins.length > 0 && widgets.length > 0 && (
           <p className="mt-3 text-xs text-yellow-300">Approved but never seen: {neverSeenOrigins.join(", ")} — the widget may not be installed there.</p>
+        )}
+      </div>
+
+      {/* Google Business Profile */}
+      <div className={box}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display text-xl font-semibold">Google Business Profile</h2>
+            <p className="mt-1 text-xs text-white/45">
+              We surface unanswered reviews as opportunities so you can respond before they hurt your ranking.
+            </p>
+          </div>
+        </div>
+
+        {!analytics.access.googleConnected ? (
+          <p className="mt-4 text-sm text-white/50">
+            {status.googleConfigured
+              ? <>Not connected. Sign in with Google from <Link href={settingsHref} className="underline hover:text-forge-lime">Settings → Connections</Link>, then grant Business Profile access here.</>
+              : <>Google sign-in isn&apos;t available on the platform yet.</>}
+          </p>
+        ) : analytics.access.gbpGranted ? (
+          <p className="mt-4 text-sm text-forge-lime">
+            Access granted — unanswered reviews will appear in your opportunity feed automatically.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm text-white/50">
+              Your Google account is connected ({analytics.access.accountEmail ?? "unknown"}), but we don&apos;t have Business Profile access yet.
+              Granting it lets us read your reviews so we can flag unanswered ones — we never post or modify anything.
+            </p>
+            <a href={gbpGrantHref} className="btn-primary inline-block px-5 py-2.5 text-xs">Connect Google Business Profile</a>
+          </div>
         )}
       </div>
 

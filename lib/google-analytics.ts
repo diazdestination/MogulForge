@@ -17,6 +17,7 @@ import { getOrganizationById } from "./tenant";
  */
 
 const [SEARCH_CONSOLE_SCOPE, GA4_SCOPE] = GOOGLE_EXTRA_SCOPE_SETS.analytics;
+const [GBP_SCOPE] = GOOGLE_EXTRA_SCOPE_SETS.gbp;
 const RANGE_DAYS = 28;
 const ROW_LIMIT = 10;
 
@@ -27,6 +28,7 @@ export type AnalyticsAccess = {
   accountEmail: string | null;
   searchConsoleGranted: boolean;
   ga4Granted: boolean;
+  gbpGranted: boolean;
 };
 
 export async function getAnalyticsAccess(organizationId: string): Promise<AnalyticsAccess> {
@@ -36,6 +38,7 @@ export async function getAnalyticsAccess(organizationId: string): Promise<Analyt
     accountEmail: auth.accountEmail,
     searchConsoleGranted: auth.grantedScopes.includes(SEARCH_CONSOLE_SCOPE),
     ga4Granted: auth.grantedScopes.includes(GA4_SCOPE),
+    gbpGranted: auth.grantedScopes.includes(GBP_SCOPE),
   };
 }
 
