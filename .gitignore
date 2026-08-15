@@ -1,0 +1,13 @@
+.next/
+.next-stale-*/
+.vinext/
+.wrangler/
+node_modules/
+.env*
+!.env.example
+out/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
