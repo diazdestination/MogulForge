@@ -8,9 +8,9 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 const display = Cormorant_Garamond({ subsets: ["latin"], variable: "--font-display", weight: ["500", "600", "700"] });
 
 export const metadata: Metadata = {
-  title: { default: "MogulForge | Recover the Revenue You're Already Losing", template: "%s | MogulForge" },
-  description: "AI Revenue Rescue™ finds the hidden leaks costing your business leads and sales—then installs the systems that recover them.",
-  metadataBase: new URL("https://mogulforge.com"),
+  title: { default: "MogulForge GrowthOS | Business Intelligence for Revenue Action", template: "%s | MogulForge" },
+  description: "GrowthOS is MogulForge's Business Intelligence Ecosystem for turning leads, pipeline activity, follow-up, and audit evidence into clear next actions.",
+  metadataBase: new URL("https://mogulforge.ai"),
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
